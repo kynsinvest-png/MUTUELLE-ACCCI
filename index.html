@@ -3416,14 +3416,41 @@ function getLicenceFromStorage(){
   const specificKey = getLicenceStorageKey();
   const specific = localStorage.getItem(specificKey);
   if(specific) return specific;
-  // 2. Fallback sur l'ancienne clé générique (migration) — lecture DIRECTE localStorage
+  // 2. Fallback sur l'ancienne clé générique — lecture DIRECTE
   const legacy = localStorage.getItem('mutuelle_licence');
   if(legacy){
-    // Migrer vers la nouvelle clé spécifique
-    localStorage.setItem(specificKey, legacy);
-    localStorage.removeItem('mutuelle_licence');
-    console.log('[Licence] Migration clé localStorage →', specificKey);
-    return legacy;
+    try {
+      const lic = JSON.parse(legacy);
+      // Vérifier que cette licence ancienne appartient bien à cette app
+      // Si elle a un gasId et qu'il ne correspond pas → rejeter et nettoyer
+      if(GAS_URL && !GAS_URL.includes('VOTRE_URL')){
+        const match = GAS_URL.match(/\/s\/([^/]+)\/exec/);
+        if(match){
+          const currentGasId = match[1].slice(-12).toUpperCase();
+          if(lic.gasId && lic.gasId !== currentGasId){
+            // Licence d'une autre app (gasId différent) → supprimer
+            console.log('[Licence] Ancienne licence rejetée (gasId différent) — suppression');
+            localStorage.removeItem('mutuelle_licence');
+            return null;
+          }
+          if(!lic.gasId){
+            // Licence sans gasId (ancienne version) → ne pas accepter, forcer réactivation
+            console.log('[Licence] Ancienne licence sans gasId — réactivation requise');
+            localStorage.removeItem('mutuelle_licence');
+            return null;
+          }
+        }
+      }
+      // Licence compatible → migrer vers la nouvelle clé spécifique
+      localStorage.setItem(specificKey, legacy);
+      localStorage.removeItem('mutuelle_licence');
+      console.log('[Licence] Migration clé localStorage →', specificKey);
+      return legacy;
+    } catch(e){
+      // JSON invalide → supprimer
+      localStorage.removeItem('mutuelle_licence');
+      return null;
+    }
   }
   return null;
 }
