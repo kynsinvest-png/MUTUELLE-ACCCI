@@ -3436,19 +3436,6 @@ function setLicenceToStorage(lic){
 
 const LICENCE_MASTER_KEY = "MUTUELLECI_VENDOR_2026";
 
-// Vérifier une clé de licence (locale ou Sheets)
-async function verifyLicence(lic){
-  if(!lic?.key || !lic?.nom || !lic?.expiration) return {valid:false, reason:'Données licence incomplètes'};
-  const expected = await sha256(lic.nom+'|'+lic.expiration+'|'+LICENCE_MASTER_KEY);
-  const shortKey = expected.substring(0,32).toUpperCase();
-  if(shortKey !== lic.key) return {valid:false, reason:'Clé invalide'};
-  const now  = new Date();
-  const exp  = new Date(lic.expiration);
-  const diff = Math.floor((exp - now)/(1000*60*60*24));
-  if(diff < 0) return {valid:false, expired:true, reason:'Licence expirée depuis '+Math.abs(diff)+' jour(s)'};
-  return {valid:true, daysLeft:diff, nom:lic.nom, expiration:lic.expiration};
-}
-
 // Vérifier la licence au démarrage — Sheets en priorité, localStorage en fallback
 async function checkLicenceOnStart(){
   // 1. Essayer de charger depuis Sheets (source de vérité centrale)
@@ -3465,8 +3452,12 @@ async function checkLicenceOnStart(){
           return true;
         } else if(result.expired){
           showLicenceExpiredScreen(result.reason); return false;
+        } else {
+          // Licence invalide (mauvais nom, mauvais gasId, clé corrompue)
+          // → Afficher l'écran de saisie avec message explicatif
+          showLicenceScreen(result.reason);
+          return false;
         }
-        // Clé invalide dans Sheets → fallback localStorage
       }
     } catch(e){ console.warn('[Licence] Erreur Sheets:', e.message); }
   }
@@ -3487,10 +3478,18 @@ async function checkLicenceOnStart(){
 }
 
 // Afficher l'écran de saisie de la clé de licence
-function showLicenceScreen(){
+function showLicenceScreen(reason){
   document.getElementById('licence-screen').style.display='flex';
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app-shell').style.display='none';
+  // Afficher le motif si fourni (ex: licence d'une autre app)
+  const msgEl = document.getElementById('lic-err');
+  if(msgEl && reason){
+    msgEl.textContent = '⚠️ ' + reason;
+    msgEl.style.display = 'block';
+  } else if(msgEl){
+    msgEl.style.display = 'none';
+  }
 }
 
 // Afficher l'écran d'expiration
