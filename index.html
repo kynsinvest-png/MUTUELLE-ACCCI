@@ -3393,6 +3393,47 @@ const GAS_SECRET = "MUT2026_SECRET_TOKEN";
 
 // ─── SYSTÈME DE LICENCE ────────────────────────────────────────────────────
 // Clé secrète du vendeur (VOUS) — NE JAMAIS PARTAGER
+
+// ════════════════════════════════════════════════════════
+// CLÉ LICENCE UNIQUE PAR APP — anti-collision localStorage
+// La clé est liée au nom de la mutuelle ET à l'URL GAS
+// ════════════════════════════════════════════════════════
+
+// Générer une clé localStorage unique par instance d'app
+function getLicenceStorageKey(){
+  // Extraire un identifiant court depuis l'URL GAS (les 12 derniers chars avant /exec)
+  let gasId = 'DEFAULT';
+  if(GAS_URL && !GAS_URL.includes('VOTRE_URL')){
+    const match = GAS_URL.match(/\/s\/([^/]+)\/exec/);
+    if(match) gasId = match[1].slice(-12).toUpperCase();
+  }
+  return 'mutuelle_licence_' + gasId;
+}
+
+// Lire la licence depuis le bon emplacement localStorage
+function getLicenceFromStorage(){
+  // 1. Chercher avec la clé spécifique à cette app
+  const specificKey = getLicenceStorageKey();
+  const specific = localStorage.getItem(specificKey);
+  if(specific) return specific;
+  // 2. Fallback sur l'ancienne clé générique (migration)
+  const legacy = getLicenceFromStorage();
+  if(legacy){
+    // Migrer vers la nouvelle clé
+    localStorage.setItem(specificKey, legacy);
+    localStorage.removeItem('mutuelle_licence'); // Nettoyer l'ancienne
+    console.log('[Licence] Migration clé localStorage →', specificKey);
+    return legacy;
+  }
+  return null;
+}
+
+// Sauvegarder la licence dans le bon emplacement
+function setLicenceToStorage(lic){
+  const specificKey = getLicenceStorageKey();
+  localStorage.setItem(specificKey, JSON.stringify(lic));
+}
+
 const LICENCE_MASTER_KEY = "MUTUELLECI_VENDOR_2026";
 
 // Vérifier une clé de licence (locale ou Sheets)
@@ -3419,7 +3460,7 @@ async function checkLicenceOnStart(){
         const result = await verifyLicence(licSheets);
         if(result.valid){
           // Mettre à jour le localStorage avec la version Sheets
-          localStorage.setItem('mutuelle_licence', JSON.stringify(licSheets));
+          setLicenceToStorage(licSheets);
           if(result.daysLeft <= 30) showLicenceWarning(result.daysLeft, result.expiration);
           return true;
         } else if(result.expired){
@@ -3431,7 +3472,7 @@ async function checkLicenceOnStart(){
   }
 
   // 2. Fallback : localStorage (hors ligne ou GAS non configuré)
-  const stored = localStorage.getItem('mutuelle_licence');
+  const stored = getLicenceFromStorage();
   if(!stored){ showLicenceScreen(); return false; }
   try {
     const lic    = JSON.parse(stored);
@@ -3513,7 +3554,7 @@ async function updateLicenceCard(){
   const el = document.getElementById('licence-card-info');
   if(!el) return;
   try {
-    const stored = localStorage.getItem('mutuelle_licence');
+    const stored = getLicenceFromStorage();
     if(!stored){ el.innerHTML = '<span style="color:#DC2626">⚠️ Aucune licence active</span>'; return; }
     const lic    = JSON.parse(stored);
     const result = await verifyLicence(lic);
@@ -3536,7 +3577,7 @@ async function updateLicenceCard(){
 function openRenewLicenceModal(){
   // Pré-remplir avec les infos actuelles
   try {
-    const stored = localStorage.getItem('mutuelle_licence');
+    const stored = getLicenceFromStorage();
     if(stored){
       const lic = JSON.parse(stored);
       if(document.getElementById('renew-nom-input')) document.getElementById('renew-nom-input').value = lic.nom||'';
@@ -3573,10 +3614,16 @@ async function confirmRenewLicence(){
 
   if(btn){ btn.disabled=true; btn.textContent='⏳ Activation…'; }
 
-  const lic = {key:shortKey, nom, expiration:exp};
+  // Lier la licence à l'URL GAS de cette app
+  let gasId2 = '';
+  if(GAS_URL && !GAS_URL.includes('VOTRE_URL')){
+    const gm2 = GAS_URL.match(/\/s\/([^/]+)\/exec/);
+    if(gm2) gasId2 = gm2[1].slice(-12).toUpperCase();
+  }
+  const lic = {key:shortKey, nom, expiration:exp, gasId:gasId2};
 
-  // Sauvegarder localStorage
-  localStorage.setItem('mutuelle_licence', JSON.stringify(lic));
+  // Sauvegarder localStorage avec clé unique par app
+  setLicenceToStorage(lic);
 
   // Sauvegarder dans Sheets
   if(GAS_URL && !GAS_URL.includes('VOTRE_URL')){
@@ -3605,15 +3652,28 @@ async function confirmRenewLicence(){
 // ─ Calculer les jours restants pour verifyLicence (compatibilité)
 async function verifyLicence(lic){
   if(!lic?.key||!lic?.nom||!lic?.expiration) return {valid:false, reason:'Licence invalide'};
+  // ── Vérification cryptographique de la clé ──
   const expected = await sha256(lic.nom+'|'+lic.expiration+'|'+LICENCE_MASTER_KEY);
   const shortKey = expected.substring(0,32).toUpperCase();
-  if(lic.key !== shortKey) return {valid:false, reason:'Clé de licence incorrecte'};
+  if(lic.key !== shortKey) return {valid:false, reason:'Clé de licence incorrecte pour cette mutuelle'};
+  // ── Solution 3 : Vérifier que la licence est liée à l'URL GAS actuelle ──
+  // Si la licence stocke un gasId, vérifier qu'il correspond à l'app actuelle
+  if(lic.gasId && GAS_URL && !GAS_URL.includes('VOTRE_URL')){
+    const match = GAS_URL.match(/\/s\/([^/]+)\/exec/);
+    if(match){
+      const currentGasId = match[1].slice(-12).toUpperCase();
+      if(lic.gasId !== currentGasId){
+        return {valid:false, reason:'Licence liée à une autre application — contactez KynsDev'};
+      }
+    }
+  }
+  // ── Vérification de l'expiration ──
   const now  = new Date(); now.setHours(0,0,0,0);
   const exp  = new Date(lic.expiration); exp.setHours(23,59,59,999);
   const diff = exp - now;
   if(diff < 0) return {valid:false, expired:true, reason:`Licence expirée le ${exp.toLocaleDateString('fr-FR')}`};
   const daysLeft = Math.floor(diff/(1000*60*60*24));
-  return {valid:true, daysLeft, expiration:lic.expiration};
+  return {valid:true, daysLeft, expiration:lic.expiration, nom:lic.nom};
 }
 
 async function activateLicence(){
@@ -3628,14 +3688,20 @@ async function activateLicence(){
   const shortKey = expected.substring(0,32).toUpperCase();
   if(key !== shortKey){ errEl.textContent='Clé incorrecte. Contactez KynsGestAsso — WhatsApp : +2250713435873'; errEl.style.display='block'; return; }
 
-  const lic = {key:shortKey, nom, expiration:exp};
+  // Extraire gasId pour lier la licence à cet app
+  let gasId = '';
+  if(GAS_URL && !GAS_URL.includes('VOTRE_URL')){
+    const gm = GAS_URL.match(/\/s\/([^/]+)\/exec/);
+    if(gm) gasId = gm[1].slice(-12).toUpperCase();
+  }
+  const lic = {key:shortKey, nom, expiration:exp, gasId};
 
   // Bouton chargement
   const btn = document.querySelector('#licence-screen button[onclick="activateLicence()"]');
   if(btn){ btn.disabled=true; btn.textContent='Activation…'; }
 
-  // 1. Sauvegarder dans localStorage (immédiat)
-  localStorage.setItem('mutuelle_licence', JSON.stringify(lic));
+  // 1. Sauvegarder dans localStorage avec clé unique
+  setLicenceToStorage(lic);
 
   // 2. Sauvegarder dans Sheets via branding (partagé tous les postes)
   if(GAS_URL && !GAS_URL.includes('VOTRE_URL')){
@@ -5132,7 +5198,7 @@ function renderAdminDashboard(){
 
 function renderLicenceInfo(){
   // Récupérer la licence depuis localStorage
-  const stored = localStorage.getItem('mutuelle_licence');
+  const stored = getLicenceFromStorage();
   if(!stored) return;
   try {
     const lic = JSON.parse(stored);
