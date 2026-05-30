@@ -3416,12 +3416,12 @@ function getLicenceFromStorage(){
   const specificKey = getLicenceStorageKey();
   const specific = localStorage.getItem(specificKey);
   if(specific) return specific;
-  // 2. Fallback sur l'ancienne clé générique (migration)
-  const legacy = getLicenceFromStorage();
+  // 2. Fallback sur l'ancienne clé générique (migration) — lecture DIRECTE localStorage
+  const legacy = localStorage.getItem('mutuelle_licence');
   if(legacy){
-    // Migrer vers la nouvelle clé
+    // Migrer vers la nouvelle clé spécifique
     localStorage.setItem(specificKey, legacy);
-    localStorage.removeItem('mutuelle_licence'); // Nettoyer l'ancienne
+    localStorage.removeItem('mutuelle_licence');
     console.log('[Licence] Migration clé localStorage →', specificKey);
     return legacy;
   }
@@ -3438,51 +3438,83 @@ const LICENCE_MASTER_KEY = "MUTUELLECI_VENDOR_2026";
 
 // Vérifier la licence au démarrage — Sheets en priorité, localStorage en fallback
 async function checkLicenceOnStart(){
-  // 1. Essayer de charger depuis Sheets (source de vérité centrale)
+  // ── Étape 1 : Tenter Sheets si GAS configuré ──
   if(GAS_URL && !GAS_URL.includes('VOTRE_URL')){
     try {
       const data = await dbGet('getBranding');
       if(data?.licence){
-        const licSheets = JSON.parse(data.licence);
-        const result = await verifyLicence(licSheets);
-        if(result.valid){
-          // Mettre à jour le localStorage avec la version Sheets
-          setLicenceToStorage(licSheets);
-          if(result.daysLeft <= 30) showLicenceWarning(result.daysLeft, result.expiration);
-          return true;
-        } else if(result.expired){
-          showLicenceExpiredScreen(result.reason); return false;
-        } else {
-          // Licence invalide (mauvais nom, mauvais gasId, clé corrompue)
-          // → Afficher l'écran de saisie avec message explicatif
-          showLicenceScreen(result.reason);
+        let licSheets;
+        try { licSheets = JSON.parse(data.licence); } catch(e){ licSheets = null; }
+        if(licSheets){
+          const result = await verifyLicence(licSheets);
+          console.log('[Licence] Résultat Sheets:', result);
+          if(result.valid){
+            setLicenceToStorage(licSheets);
+            if(result.daysLeft <= 30) showLicenceWarning(result.daysLeft, result.expiration);
+            return true;
+          }
+          // Invalide ou expirée → afficher l'écran approprié et STOPPER
+          if(result.expired){
+            showLicenceExpiredScreen(result.reason);
+          } else {
+            showLicenceScreen(result.reason);
+          }
           return false;
         }
       }
-    } catch(e){ console.warn('[Licence] Erreur Sheets:', e.message); }
+      // Pas de licence dans Sheets → vérifier localStorage
+    } catch(e){
+      console.warn('[Licence] Sheets inaccessible:', e.message);
+      // GAS inaccessible → fallback localStorage
+    }
   }
 
-  // 2. Fallback : localStorage (hors ligne ou GAS non configuré)
+  // ── Étape 2 : Fallback localStorage ──
   const stored = getLicenceFromStorage();
-  if(!stored){ showLicenceScreen(); return false; }
+  console.log('[Licence] localStorage:', stored ? 'trouvée' : 'absente');
+  if(!stored){
+    showLicenceScreen();
+    return false;
+  }
   try {
     const lic    = JSON.parse(stored);
     const result = await verifyLicence(lic);
+    console.log('[Licence] Résultat localStorage:', result);
     if(result.valid){
       if(result.daysLeft <= 30) showLicenceWarning(result.daysLeft, result.expiration);
       return true;
     }
-    result.expired ? showLicenceExpiredScreen(result.reason) : showLicenceScreen();
+    if(result.expired){
+      showLicenceExpiredScreen(result.reason);
+    } else {
+      showLicenceScreen(result.reason);
+    }
     return false;
-  } catch(e){ showLicenceScreen(); return false; }
+  } catch(e){
+    console.warn('[Licence] Erreur parsing localStorage:', e.message);
+    showLicenceScreen();
+    return false;
+  }
 }
 
 // Afficher l'écran de saisie de la clé de licence
 function showLicenceScreen(reason){
-  document.getElementById('licence-screen').style.display='flex';
-  document.getElementById('login-screen').style.display='none';
-  document.getElementById('app-shell').style.display='none';
-  // Afficher le motif si fourni (ex: licence d'une autre app)
+  // Masquer tous les autres écrans
+  const ls  = document.getElementById('licence-screen');
+  const log = document.getElementById('login-screen');
+  const app = document.getElementById('app-shell');
+  const exp = document.getElementById('licence-expired-screen');
+  if(log) log.style.display = 'none';
+  if(app) app.style.display = 'none';
+  if(exp) exp.style.display = 'none';
+  // Afficher l'écran licence en forçant le display
+  if(ls){
+    ls.style.display = 'flex';
+    ls.style.visibility = 'visible';
+    ls.style.opacity = '1';
+    ls.style.zIndex = '9999';
+  }
+  // Message d'erreur si fourni
   const msgEl = document.getElementById('lic-err');
   if(msgEl && reason){
     msgEl.textContent = '⚠️ ' + reason;
@@ -3490,6 +3522,7 @@ function showLicenceScreen(reason){
   } else if(msgEl){
     msgEl.style.display = 'none';
   }
+  console.log('[Licence] Écran activation affiché', reason||'');
 }
 
 // Afficher l'écran d'expiration
@@ -15296,7 +15329,7 @@ function showReadonlyBanner(){
   window.addEventListener('resize', applyMobile);
 })();
 (async function startApp(){
-  // Afficher un écran de chargement minimal pendant la vérification
+  // Loader de démarrage
   const loader = document.createElement('div');
   loader.id = 'app-loader';
   loader.style.cssText = 'position:fixed;inset:0;background:#0F2544;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999';
@@ -15304,22 +15337,31 @@ function showReadonlyBanner(){
     <div style="color:rgba(255,255,255,0.7);font-size:13px;font-family:sans-serif">Vérification de la licence…</div>`;
   document.body.appendChild(loader);
 
-  // Appliquer le branding depuis localStorage immédiatement
+  // Branding immédiat depuis cache
   try { applyBranding(); } catch(e){}
 
   // Vérifier la licence
   const licOk = await checkLicenceOnStart();
 
-  // Supprimer le loader
+  // Supprimer le loader APRÈS que l'écran cible est déjà affiché
   loader.remove();
 
-  if(!licOk) return;
+  if(!licOk){
+    // S'assurer que l'écran licence est bien visible (sécurité supplémentaire)
+    const ls = document.getElementById('licence-screen');
+    const exp = document.getElementById('licence-expired-screen');
+    const licVisible   = ls  && ls.style.display  === 'flex';
+    const expirVisible = exp && exp.style.display === 'flex';
+    if(!licVisible && !expirVisible){
+      // Aucun écran affiché → forcer l'écran licence
+      showLicenceScreen('Aucune licence valide trouvée.');
+    }
+    return;
+  }
 
-  // Licence valide → afficher l'écran de connexion
+  // Licence valide → écran de connexion
   document.getElementById('login-screen').style.display = 'flex';
-  // Restaurer les identifiants mémorisés
   restoreRememberMe();
-  // Tenter l'auto-connexion si "Se souvenir de moi" actif
   await tryAutoLogin();
 })();
 
