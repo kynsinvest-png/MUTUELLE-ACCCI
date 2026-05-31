@@ -3335,7 +3335,9 @@ const SITE_URL = "https://kynsinvest-png.github.io/mutuelle2026/";
 const SUPER_ADMIN = {user:'admin', pass:'mutuelle2026'};
 
 // Liste des administrateurs secondaires (persistée dans localStorage)
-let adminAccounts = JSON.parse(localStorage.getItem('mutuelle_admins')||'[]');
+// Comptes admins — chargés depuis Sheets (source de vérité), PAS depuis localStorage
+// Le localStorage n'est qu'un cache temporaire de session
+let adminAccounts = [];
 
 // Admin actuellement connecté
 let currentAdmin = null; // {id, nom, login, role, modules:[]}
@@ -4643,7 +4645,7 @@ async function adminLogin(){
 
     if(data?.admins?.length){
       adminAccounts = data.admins;
-      try { localStorage.setItem('mutuelle_admins', JSON.stringify(adminAccounts)); } catch(e){}
+      // Admins sauvegardés dans Sheets via dbPost
     }
 
     let found = null;
@@ -14996,7 +14998,7 @@ function _cacheData(){
 
 function saveAdminAccounts(){
   // 1. Sauvegarder localement (accès rapide)
-  try { localStorage.setItem('mutuelle_admins', JSON.stringify(adminAccounts)); } catch(e){}
+  // Admins sauvegardés dans Sheets via dbPost
 }
 
 function toggleAdminModules(){
