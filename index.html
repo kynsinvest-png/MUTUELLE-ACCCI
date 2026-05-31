@@ -3992,37 +3992,42 @@ async function loadFromSheets(){
   hideDbError();
 
   // Fusionner membres Sheets avec membres codés en dur
-  // Priorité absolue aux données Sheets (plus récentes et complètes)
+  // Sheets = source de vérité absolue — on REMPLACE complètement le tableau members
   if(data.members && data.members.length > 0){
-    data.members.forEach(sm=>{
-      // Normaliser actif : Sheets renvoie "TRUE"/"FALSE" en string ou boolean
-      const actifVal = sm.actif === undefined ? true
-        : sm.actif === true || sm.actif === 'true' || sm.actif === 'TRUE' || sm.actif === 1 || sm.actif === '1';
-      const idx = members.findIndex(m=>m.code===sm.code);
-      if(idx>=0){
-        members[idx] = {
-          ...members[idx],
-          ...sm,
-          tel:      sm.tel      || members[idx].tel      || '',
-          fonction: sm.fonction || members[idx].fonction || '',
-          service:  sm.service  || members[idx].service  || '',
-          nom:      sm.nom      || members[idx].nom,
-          quota:    Number(sm.quota)  || members[idx].quota  || 1000,
-          verse:    Number(sm.verse)  || members[idx].verse  || 1000,
-          actif:    actifVal,
-        };
-      } else {
-        members.push({...sm, actif: actifVal});
-      }
-    });
+    members = data.members.map(sm=>({
+      ...sm,
+      actif: sm.actif === true || sm.actif === 'true' || sm.actif === 'TRUE' || sm.actif === 1 || sm.actif === '1',
+      quota: Number(sm.quota) || 1000,
+      verse: Number(sm.verse) || 1000,
+      tel:   sm.tel || '',
+      nom:   sm.nom || '',
+      prenom:sm.prenom || '',
+    }));
+  } else if(data.members && data.members.length === 0){
+    // Sheets vide → vider aussi le cache et le tableau
+    members = [];
+    lsRemove('mc_members');
   }
-  // Mettre en cache les membres enrichis (tel, fonction, etc.) pour la reconnexion
+  // Mettre à jour le cache avec les données Sheets fraîches
   try {
-    const membersCache = members.map(m=>({code:m.code,tel:m.tel||'',fonction:m.fonction||'',service:m.service||'',nom:m.nom,prenom:m.prenom||'',quota:m.quota,verse:m.verse,actif:m.actif,num:m.num,date:m.date}));
-    lsSet('mutuelle_members_cache', JSON.stringify(membersCache));
+    lsSet('mc_members', JSON.stringify(members));
   } catch(e){}
   if(data.paiements)      payments       = data.paiements;
-  if(data.excCotisations) excCotisations = data.excCotisations;
+  function normalizeExcCotis(list){
+    return (list||[]).map(exc=>({
+      ...exc,
+      scope: (()=>{
+        if(exc.scope==='all'||exc.scope===undefined) return exc.scope||'all';
+        if(Array.isArray(exc.scope)) return exc.scope;
+        try{ return JSON.parse(exc.scope); }catch(e){ return 'all'; }
+      })(),
+      paiements: (()=>{
+        if(exc.paiements&&typeof exc.paiements==='object'&&!Array.isArray(exc.paiements)) return exc.paiements;
+        try{ return JSON.parse(exc.paiements||'{}'); }catch(e){ return {}; }
+      })(),
+    }));
+  }
+  if(data.excCotisations) excCotisations = normalizeExcCotis(data.excCotisations);
   if(data.assistances)    assistances    = data.assistances;
   if(data.depenses)       depenses       = data.depenses;
   if(data.dons)           dons           = data.dons;
@@ -4563,10 +4568,8 @@ function memberLogin(){
 
     // Charger Sheets en arrière-plan pour avoir branding + données à jour
     if(GAS_URL && !GAS_URL.includes('VOTRE_URL')){
-      // ── Chargement progressif pour 600 membres ──
-  // 1. Afficher les membres déjà en cache immédiatement
-  const cachedMb = lsGet('mc_members');
-  if(cachedMb){ try{ members = JSON.parse(cachedMb); renderAdminDashboard(); renderMembersTable(); }catch(e){} }
+      // ── Chargement depuis Sheets — source de vérité ──
+      // Le cache localStorage n'est utilisé qu'en fallback hors-ligne (voir plus bas)
 
   dbGet('getAllData').then(data=>{
         if(data){
@@ -4785,16 +4788,38 @@ async function connectGAS(){
     document.getElementById('db-status-dot').style.background='#10B981';
     document.getElementById('db-status-dot').title='Connecté à Google Sheets ✅';
 
-    // Apply data
-    if(data.members && data.members.length>0){
-      data.members.forEach(sm=>{
-        const idx=members.findIndex(m=>m.code===sm.code);
-        if(idx>=0) members[idx]={...members[idx],...sm};
-        else members.push(sm);
-      });
+    // Apply data — Sheets est source de vérité absolue
+    if(data.members && data.members.length > 0){
+      // Remplacer complètement le tableau avec les données Sheets
+      members = data.members.map(sm=>({
+        ...sm,
+        actif: sm.actif === true || sm.actif === 'true' || sm.actif === 'TRUE' || sm.actif === 1,
+        quota: Number(sm.quota)||1000,
+        verse: Number(sm.verse)||1000,
+      }));
+    } else if(data.members && data.members.length === 0){
+      // Sheets vide → vider aussi le tableau et le cache
+      members = [];
+      lsRemove('mc_members');
     }
+    // Mettre à jour le cache
+    try{ lsSet('mc_members', JSON.stringify(members)); }catch(e){}
     if(data.paiements)      payments       = data.paiements;
-    if(data.excCotisations) excCotisations = data.excCotisations;
+  function normalizeExcCotis(list){
+    return (list||[]).map(exc=>({
+      ...exc,
+      scope: (()=>{
+        if(exc.scope==='all'||exc.scope===undefined) return exc.scope||'all';
+        if(Array.isArray(exc.scope)) return exc.scope;
+        try{ return JSON.parse(exc.scope); }catch(e){ return 'all'; }
+      })(),
+      paiements: (()=>{
+        if(exc.paiements&&typeof exc.paiements==='object'&&!Array.isArray(exc.paiements)) return exc.paiements;
+        try{ return JSON.parse(exc.paiements||'{}'); }catch(e){ return {}; }
+      })(),
+    }));
+  }
+    if(data.excCotisations) excCotisations = normalizeExcCotis(data.excCotisations);
     if(data.assistances)    assistances    = data.assistances;
     if(data.depenses)       depenses       = data.depenses;
     if(data.dons)           dons           = data.dons;
@@ -6027,6 +6052,19 @@ function savePaiement(){
   });
   _cacheData();
 
+  // ── Liaison Comptes & Trésorerie ──
+  const payCpt = document.getElementById('pay-compte')?.value;
+  if(payCpt && moisList.length > 0){
+    enregistrerTransaction({
+      compteId: payCpt,
+      type:     'entree',
+      montant:  montantParMois * moisList.length,
+      libelle:  'Cotisation — '+(m.prenom?m.prenom+' ':'')+m.nom+' ('+moisList.map(mo=>MOIS_FR[Number(mo)]||mo).join(', ')+')',
+      source:   'cotisation',
+      date:     today,
+    });
+  }
+
   ok.style.display='flex';
   // Réinitialiser le membre sélectionné
   clearPayMembre();
@@ -6240,9 +6278,15 @@ document.getElementById('admin-pass').addEventListener('keydown',e=>{ if(e.key==
    COTISATIONS EXCEPTIONNELLES — HELPERS
 ══════════════════════════════════════════ */
 function getExcMembers(exc){
-  // Returns array of member objects concerned by this cotisation
-  if(exc.scope==='all') return members.filter(m=>m.actif);
-  return members.filter(m=>exc.scope.includes(m.code));
+  if(!exc) return [];
+  // scope peut être : 'all', un tableau, ou une string JSON depuis Sheets
+  let scope = exc.scope;
+  if(typeof scope === 'string' && scope !== 'all'){
+    try { scope = JSON.parse(scope); } catch(e){ scope = []; }
+  }
+  if(scope === 'all') return members.filter(m=>m.actif);
+  if(Array.isArray(scope)) return members.filter(m=>scope.includes(m.code));
+  return members.filter(m=>m.actif); // fallback
 }
 function excPaidCount(exc){ return Object.keys(exc.paiements||{}).length; }
 function excTotalCollecte(exc){ return Object.values(exc.paiements||{}).reduce((s,v)=>s+v,0); }
@@ -6806,6 +6850,21 @@ function saveAssist(){
   if(idx===-1){ assistances.push(record); dbPost('saveAssistance', record); invalideSoldeCache(_anneeActive); }
   else { assistances[idx]={...assistances[idx],...record}; dbPost('updateAssistance', assistances[idx]); }
   _cacheData();
+
+  // ── Liaison Comptes & Trésorerie ──
+  const astCpt = document.getElementById('assist-compte')?.value;
+  if(astCpt && idx===-1){
+    const mb = getMemberByCode(memberCode);
+    enregistrerTransaction({
+      compteId: astCpt,
+      type:     'sortie',
+      montant:  Number(montant)||0,
+      libelle:  'Assistance '+(ASSIST_TYPES[type]?.label||type)+' — '+(mb?(mb.prenom||'')+' '+mb.nom:memberCode),
+      source:   'assistance',
+      sourceId: record.id,
+      date:     dateVerse||dateEvent,
+    });
+  }
 
   closeModal('modal-assist');
   renderAssistAdmin();
@@ -12136,6 +12195,20 @@ function saveDep(){
   else { depenses[idx]={...depenses[idx],...record}; dbPost('updateDepense', depenses[idx]); }
   _cacheData();
 
+  // ── Liaison Comptes & Trésorerie ──
+  const depCpt = document.getElementById('dep-compte')?.value;
+  if(depCpt && idx===-1){
+    enregistrerTransaction({
+      compteId: depCpt,
+      type:     'sortie',
+      montant:  Number(montant)||0,
+      libelle:  libelle+(beneficiaire?' — '+beneficiaire:''),
+      source:   'depense',
+      sourceId: record.id,
+      date:     date,
+    });
+  }
+
   closeModal('modal-dep');
   renderDepenses();
 }
@@ -13585,6 +13658,21 @@ function saveDon(){
     dbPost('updateDon', updatedRecord);
   }
   _cacheData();
+
+  // ── Liaison Comptes & Trésorerie ──
+  const donCpt = document.getElementById('don-compte')?.value;
+  if(donCpt && idx===-1 && type==='especes' && montant>0){
+    enregistrerTransaction({
+      compteId: donCpt,
+      type:     'entree',
+      montant:  Number(montant)||0,
+      libelle:  'Don / Revenu — '+donateur,
+      source:   'don',
+      sourceId: record.id||('tmp_'+Date.now()),
+      date:     date,
+    });
+  }
+
   closeModal('modal-don');
   renderDons();
 }
@@ -15322,9 +15410,13 @@ function showReadonlyBanner(){
       });
     }
 
-    // 2. Restaurer paiements, dons, dépenses, etc.
+    // ── Fallback hors-ligne — utilisé UNIQUEMENT si GAS inaccessible ──
+    // ATTENTION : mc_members est rechargé ici uniquement si members[] est vide
+    // Sheets a toujours priorité — voir callback getAllData qui écrase ce cache
     const mb_cache = lsGet('mc_members');
-    if(mb_cache){ try{ members = JSON.parse(mb_cache); }catch(e){} }
+    if(mb_cache && members.length === 0){
+      try{ members = JSON.parse(mb_cache); }catch(e){}
+    }
     const p  = lsGet('mc_payments');    if(p)  payments       = JSON.parse(p);
     const ec = lsGet('mc_excCotis');    if(ec) excCotisations = JSON.parse(ec);
     const as = lsGet('mc_assistances'); if(as) assistances    = JSON.parse(as);
