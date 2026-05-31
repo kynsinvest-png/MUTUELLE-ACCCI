@@ -3994,6 +3994,9 @@ async function loadFromSheets(){
   // Priorité absolue aux données Sheets (plus récentes et complètes)
   if(data.members && data.members.length > 0){
     data.members.forEach(sm=>{
+      // Normaliser actif : Sheets renvoie "TRUE"/"FALSE" en string ou boolean
+      const actifVal = sm.actif === undefined ? true
+        : sm.actif === true || sm.actif === 'true' || sm.actif === 'TRUE' || sm.actif === 1 || sm.actif === '1';
       const idx = members.findIndex(m=>m.code===sm.code);
       if(idx>=0){
         members[idx] = {
@@ -4005,10 +4008,10 @@ async function loadFromSheets(){
           nom:      sm.nom      || members[idx].nom,
           quota:    Number(sm.quota)  || members[idx].quota  || 1000,
           verse:    Number(sm.verse)  || members[idx].verse  || 1000,
-          actif:    sm.actif !== undefined ? sm.actif : members[idx].actif,
+          actif:    actifVal,
         };
       } else {
-        members.push(sm);
+        members.push({...sm, actif: actifVal});
       }
     });
   }
@@ -10256,8 +10259,28 @@ function renderProjetsMemeber(){
 
 // ── Charger données projets ──
 function loadProjets(data){
-  if(data.projets) projets=data.projets;
-  if(data.projetsPaiements) projetsPaiements=(data.projetsPaiements||[]).map(p=>({...p,montant:Number(p.montant||0)}));
+  if(data.projets){
+    projets = data.projets.map(p=>({
+      ...p,
+      montantCible: Number(p.montantCible||0),
+      cout:         Number(p.cout||0),
+      nbParticipants: Number(p.nbParticipants||0),
+      statut: p.statut||'preparation',
+      periodicite: p.periodicite||'mensuel',
+      typeRepartition: p.typeRepartition||'egale',
+      // repartition stocké en JSON string dans Sheets
+      repartition: (()=>{
+        if(Array.isArray(p.repartition)) return p.repartition;
+        if(typeof p.repartition==='string' && p.repartition.trim().startsWith('[')){
+          try{ return JSON.parse(p.repartition); }catch(e){ return []; }
+        }
+        return [];
+      })(),
+    }));
+  }
+  if(data.projetsPaiements){
+    projetsPaiements=(data.projetsPaiements||[]).map(p=>({...p,montant:Number(p.montant||0)}));
+  }
 }
 
 // Fermer dropdown paiement si clic extérieur
