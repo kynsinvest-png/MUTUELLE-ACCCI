@@ -3367,7 +3367,7 @@ const ALL_ADMIN_MODULES = [
    CONFIGURATION GOOGLE SHEETS
    Collez ici l'URL de votre déploiement Apps Script
 ══════════════════════════════════════════ */
-let GAS_URL = "https://script.google.com/macros/s/AKfycbypjJN6qyz7Svi4R4YP-Fbk7n0s9isLkGBWkY-h10hw8w3Q_sjky7yaRq8j3oykqh0iXQ/exec"; // ← URL mise à jour
+let GAS_URL = "https://script.google.com/macros/s/AKfycbxMdQLRrkmliulFwgOD87PIRd4pLctuJbjJjkuu3o9bl5Jt3P-AgpnPmiXASnI_xgkxPA/exec"; // ← URL mise à jour
 
 // ─ Test de connectivité GAS
 async function testGasConnexion(){
@@ -3461,6 +3461,32 @@ function getLicenceFromStorage(){
 function setLicenceToStorage(lic){
   const specificKey = getLicenceStorageKey();
   localStorage.setItem(specificKey, JSON.stringify(lic));
+}
+
+
+// ════════════════════════════════════════════════════════
+// CACHE LOCAL — Préfixé par gasId pour isoler chaque app
+// Un même navigateur peut accéder à plusieurs mutuelles
+// sans jamais mélanger les données
+// ════════════════════════════════════════════════════════
+function _lsKey(key){
+  // Réutiliser getLicenceStorageKey qui extrait le gasId
+  const specificKey = getLicenceStorageKey();
+  const gasId = specificKey.replace('mutuelle_licence_','');
+  return 'mc_app_'+gasId+'_'+key;
+}
+function lsSet(key, val){
+  try{ localStorage.setItem(_lsKey(key), val); }catch(e){}
+}
+function lsGet(key){
+  const v = localStorage.getItem(_lsKey(key));
+  if(v !== null) return v;
+  // Fallback clé non-préfixée (migration ancienne app)
+  return localStorage.getItem(key);
+}
+function lsRemove(key){
+  localStorage.removeItem(_lsKey(key));
+  localStorage.removeItem(key); // Nettoyer aussi l'ancienne clé
 }
 
 const LICENCE_MASTER_KEY = "MUTUELLECI_VENDOR_2026";
@@ -3989,7 +4015,7 @@ async function loadFromSheets(){
   // Mettre en cache les membres enrichis (tel, fonction, etc.) pour la reconnexion
   try {
     const membersCache = members.map(m=>({code:m.code,tel:m.tel||'',fonction:m.fonction||'',service:m.service||'',nom:m.nom,quota:m.quota,verse:m.verse,actif:m.actif,num:m.num,date:m.date}));
-    localStorage.setItem('mutuelle_members_cache', JSON.stringify(membersCache));
+    lsSet('mutuelle_members_cache', JSON.stringify(membersCache));
   } catch(e){}
   if(data.paiements)      payments       = data.paiements;
   if(data.excCotisations) excCotisations = data.excCotisations;
@@ -4004,20 +4030,20 @@ async function loadFromSheets(){
 
   // Mettre en cache toutes les données pour survie à la déconnexion
   try {
-    localStorage.setItem('mc_members', JSON.stringify(members));
-    if(data.paiements)      localStorage.setItem('mc_payments',    JSON.stringify(data.paiements));
-    if(data.excCotisations) localStorage.setItem('mc_excCotis',    JSON.stringify(data.excCotisations));
-    if(data.assistances)    localStorage.setItem('mc_assistances', JSON.stringify(data.assistances));
-    if(data.depenses)       localStorage.setItem('mc_depenses',    JSON.stringify(data.depenses));
-    if(data.dons)           localStorage.setItem('mc_dons',        JSON.stringify(data.dons));
-    if(data.documents)      localStorage.setItem('mc_documents',   JSON.stringify(data.documents));
-    if(data.patrimoine)     localStorage.setItem('mc_patrimoine',  JSON.stringify(data.patrimoine));
-    if(data.comptes)        localStorage.setItem('mc_comptes',JSON.stringify(data.comptes));
-    if(data.transactions)   localStorage.setItem('mc_transactions',JSON.stringify(data.transactions));
-    if(data.projets)        localStorage.setItem('mc_projets',JSON.stringify(data.projets));
-    if(data.projetsPaiements) localStorage.setItem('mc_projets_pay',JSON.stringify(data.projetsPaiements));
-    if(data.prets)          localStorage.setItem('mc_prets',       JSON.stringify(data.prets));
-    if(data.remboursements) localStorage.setItem('mc_remboursements',JSON.stringify(data.remboursements));
+    lsSet('mc_members', JSON.stringify(members));
+    if(data.paiements)      lsSet('mc_payments', JSON.stringify(data.paiements));
+    if(data.excCotisations) lsSet('mc_excCotis', JSON.stringify(data.excCotisations));
+    if(data.assistances)    lsSet('mc_assistances', JSON.stringify(data.assistances));
+    if(data.depenses)       lsSet('mc_depenses', JSON.stringify(data.depenses));
+    if(data.dons)           lsSet('mc_dons', JSON.stringify(data.dons));
+    if(data.documents)      lsSet('mc_documents', JSON.stringify(data.documents));
+    if(data.patrimoine)     lsSet('mc_patrimoine', JSON.stringify(data.patrimoine));
+    if(data.comptes)        lsSet('mc_comptes', JSON.stringify(data.comptes));
+    if(data.transactions)   lsSet('mc_transactions', JSON.stringify(data.transactions));
+    if(data.projets)        lsSet('mc_projets', JSON.stringify(data.projets));
+    if(data.projetsPaiements) lsSet('mc_projets_pay', JSON.stringify(data.projetsPaiements));
+    if(data.prets)          lsSet('mc_prets', JSON.stringify(data.prets));
+    if(data.remboursements) lsSet('mc_remboursements', JSON.stringify(data.remboursements));
   } catch(e){}
 
   // Re-render patrimoine si la page est active
@@ -4052,7 +4078,7 @@ async function loadFromSheets(){
         _anneesDisponibles.forEach(y=>{
           if(!ANNEE_CONFIG[y]) ANNEE_CONFIG[y]={debutIdx:0};
         });
-        try { localStorage.setItem('mutuelle_annees', JSON.stringify(_anneesDisponibles)); } catch(e){}
+        try { lsSet('mutuelle_annees', JSON.stringify(_anneesDisponibles)); } catch(e){}
       } catch(e){}
     }
     // Sauvegarder dans localStorage (logo inclus — pour les prochains chargements)
@@ -4534,7 +4560,7 @@ function memberLogin(){
     if(GAS_URL && !GAS_URL.includes('VOTRE_URL')){
       // ── Chargement progressif pour 600 membres ──
   // 1. Afficher les membres déjà en cache immédiatement
-  const cachedMb = localStorage.getItem('mc_members');
+  const cachedMb = lsGet('mc_members');
   if(cachedMb){ try{ members = JSON.parse(cachedMb); renderAdminDashboard(); renderMembersTable(); }catch(e){} }
 
   dbGet('getAllData').then(data=>{
@@ -4549,10 +4575,10 @@ function memberLogin(){
             applyBranding();
           }
           try {
-            if(data.dons)        localStorage.setItem('mc_dons',        JSON.stringify(data.dons));
-            if(data.documents)   localStorage.setItem('mc_documents',   JSON.stringify(data.documents));
-            if(data.assistances) localStorage.setItem('mc_assistances', JSON.stringify(data.assistances));
-            if(data.paiements)   localStorage.setItem('mc_payments',    JSON.stringify(data.paiements));
+            if(data.dons)        lsSet('mc_dons', JSON.stringify(data.dons));
+            if(data.documents)   lsSet('mc_documents', JSON.stringify(data.documents));
+            if(data.assistances) lsSet('mc_assistances', JSON.stringify(data.assistances));
+            if(data.paiements)   lsSet('mc_payments', JSON.stringify(data.paiements));
           } catch(e){}
           // Afficher la bannière après chargement du branding
           showMemberBanniere();
@@ -5019,7 +5045,7 @@ function showPage(id){
             if(li>=0) sd.fichier = documents[li].fichier; // conserver le binaire local
           });
           documents = sheetDocs;
-          try { localStorage.setItem('mc_documents', JSON.stringify(documents)); } catch(e){}
+          try { lsSet('mc_documents', JSON.stringify(documents)); } catch(e){}
         }
         renderDocsAdmin();
       }).catch(()=>renderDocsAdmin());
@@ -5616,7 +5642,7 @@ function saveMember(){
       nom:m.nom, quota:m.quota, verse:m.verse, actif:m.actif, num:m.num, date:m.date,
       email:m.email||'', naissance:m.naissance||'', situation:m.situation||'', ville:m.ville||'', enfants:m.enfants??''
     }));
-    localStorage.setItem('mutuelle_members_cache', JSON.stringify(mc));
+    lsSet('mutuelle_members_cache', JSON.stringify(mc));
   } catch(e){}
 
   closeModal('modal-member');
@@ -6391,7 +6417,7 @@ function closeExc(i){
     excCotisations[i].statut = 'closed';
     // Sauvegarder dans Sheets
     dbPost('updateExcCotisation', {id: excCotisations[i].id, statut: 'closed'});
-    try { localStorage.setItem('mc_excCotis', JSON.stringify(excCotisations)); } catch(e){}
+    try { lsSet('mc_excCotis', JSON.stringify(excCotisations)); } catch(e){}
     renderExcAdmin();
   });
 }
@@ -6402,7 +6428,7 @@ function deleteExc(i){
     const id = excCotisations[i]?.id;
     if(id) dbPost('deleteExcCotisation', {id});
     excCotisations.splice(i,1);
-    try { localStorage.setItem('mc_excCotis', JSON.stringify(excCotisations)); } catch(e){}
+    try { lsSet('mc_excCotis', JSON.stringify(excCotisations)); } catch(e){}
     renderExcAdmin();
   });
 }
@@ -7136,7 +7162,7 @@ async function _uploadFileChunks(sheetId, file){
         // Mettre à jour localement
         const di=documents.findIndex(d=>d.id===sheetId);
         if(di>=0) documents[di].fileUrl=r.fileUrl;
-        try{localStorage.setItem('mc_documents',JSON.stringify(documents));}catch(e){}
+        try{lsSet('mc_documents', JSON.stringify(documents));}catch(e){}
         renderDocsAdmin();
         // Afficher le lien
         const box=document.getElementById('doc-drive-link-box');
@@ -7178,7 +7204,7 @@ function deleteDoc(i){
       dbPost('deleteDocument', {id: doc.id});
     }
     documents.splice(i,1);
-    try { localStorage.setItem('mc_documents', JSON.stringify(documents)); } catch(e){}
+    try { lsSet('mc_documents', JSON.stringify(documents)); } catch(e){}
     renderDocsAdmin();
   });
 }
@@ -7353,7 +7379,7 @@ function deleteDocById(id){
     if(!ok) return;
     if(id && !String(id).startsWith('tmp_')) dbPost('deleteDocument', {id});
     documents = documents.filter(d=>d.id!==id);
-    try { localStorage.setItem('mc_documents', JSON.stringify(documents)); } catch(e){}
+    try { lsSet('mc_documents', JSON.stringify(documents)); } catch(e){}
     renderDocsAdmin();
   });
 }
@@ -7440,11 +7466,11 @@ function renderDocsMember(){
     dbGet('getMemberData').then(data=>{
       if(data?.documents !== undefined){
         documents = data.documents;
-        try { localStorage.setItem('mc_documents', JSON.stringify(documents)); } catch(e){}
+        try { lsSet('mc_documents', JSON.stringify(documents)); } catch(e){}
       }
       if(data?.dons !== undefined){
         dons = data.dons;
-        try { localStorage.setItem('mc_dons', JSON.stringify(dons)); } catch(e){}
+        try { lsSet('mc_dons', JSON.stringify(dons)); } catch(e){}
       }
       afficherDocs();
     }).catch(()=>{ afficherDocs(); });
@@ -10284,7 +10310,7 @@ let modulesConfig = {};
 
 function loadModulesConfig(){
   try{
-    const saved = localStorage.getItem('mc_modules_config');
+    const saved = lsGet('mc_modules_config');
     if(saved) modulesConfig = JSON.parse(saved);
   }catch(e){ modulesConfig={}; }
 }
@@ -10300,7 +10326,7 @@ function saveConfigModules(){
     const el=document.getElementById('chk_'+m.id);
     if(el) modulesConfig['member_'+m.id] = el.checked;
   });
-  localStorage.setItem('mc_modules_config', JSON.stringify(modulesConfig));
+  lsSet('mc_modules_config', JSON.stringify(modulesConfig));
   // Sauvegarder dans branding via GAS
   dbPost('saveModulesConfig',{modulesConfig});
   // Reconstruire les menus
@@ -11943,7 +11969,7 @@ function saveProfile(){
       email:mb.email||'', naissance:mb.naissance||'', situation:mb.situation||'',
       ville:mb.ville||'', enfants:mb.enfants??''
     }));
-    localStorage.setItem('mutuelle_members_cache', JSON.stringify(mc));
+    lsSet('mutuelle_members_cache', JSON.stringify(mc));
   } catch(e){}
 
   okEl.style.display='flex';
@@ -11981,7 +12007,7 @@ let dons = [];
 let _anneeActive = '2026';
 let _anneesDisponibles = (()=>{
   try {
-    const saved = localStorage.getItem('mutuelle_annees');
+    const saved = lsGet('mutuelle_annees');
     if(saved) return JSON.parse(saved);
   } catch(e){}
   return ['2026'];
@@ -12775,13 +12801,13 @@ let branding = {
 // ─ Charger le branding depuis localStorage au démarrage
 (function loadBrandingFromStorage(){
   try {
-    const saved = localStorage.getItem('mutuelle_branding');
+    const saved = lsGet('mutuelle_branding');
     if(saved){
       const parsed = JSON.parse(saved);
       Object.assign(branding, parsed);
     }
     // Logo stocké séparément (peut être volumineux)
-    const savedLogo = localStorage.getItem('mutuelle_branding_logo');
+    const savedLogo = lsGet('mutuelle_branding_logo');
     if(savedLogo) branding.logoUrl = savedLogo;
 
     if(branding.nom || branding.color || branding.logoUrl){
@@ -12799,14 +12825,14 @@ function saveBrandingToStorage(){
   try {
     // Sauvegarder branding sans le logo (léger)
     const b = {...branding, logoUrl: null};
-    localStorage.setItem('mutuelle_branding', JSON.stringify(b));
+    lsSet('mutuelle_branding', JSON.stringify(b));
   } catch(e){}
   // Logo dans une clé séparée
   try {
     if(branding.logoUrl){
-      localStorage.setItem('mutuelle_branding_logo', branding.logoUrl);
+      lsSet('mutuelle_branding_logo', branding.logoUrl);
     } else {
-      localStorage.removeItem('mutuelle_branding_logo');
+      lsRemove('mutuelle_branding_logo');
     }
   } catch(e){
     console.warn('[Branding] Logo trop volumineux pour localStorage');
@@ -13058,7 +13084,7 @@ function clearLogo(){
   document.getElementById('logo-preview').style.display = 'none';
   document.getElementById('logo-drop-zone').style.display = 'block';
   document.getElementById('logo-file-input').value = '';
-  try { localStorage.removeItem('mutuelle_branding_logo'); } catch(e){}
+  try { lsRemove('mutuelle_branding_logo'); } catch(e){}
   applyBranding();
   _saveBrandingToSheets(branding);
   updateBrandingPreview();
@@ -14604,7 +14630,7 @@ function renderDonsMember(){
     dbGet('getMemberData').then(data=>{
       if(data?.dons !== undefined){
         dons = data.dons;
-        try { localStorage.setItem('mc_dons', JSON.stringify(dons)); } catch(e){}
+        try { lsSet('mc_dons', JSON.stringify(dons)); } catch(e){}
       }
       afficher(filtrerMesDons());
     }).catch(()=>{ afficher(filtrerMesDons()); });
@@ -14813,7 +14839,7 @@ function reporterSoldeVersAnnee(anneeSource, anneeDest){
 
 function saveAnneesDisponibles(){
   // 1. localStorage (rapide, local)
-  try { localStorage.setItem('mutuelle_annees', JSON.stringify(_anneesDisponibles)); } catch(e){}
+  try { lsSet('mutuelle_annees', JSON.stringify(_anneesDisponibles)); } catch(e){}
   // 2. Sheets (multi-appareils) — stocker dans branding sous clé "annees"
   dbPost('saveBranding', {...branding, logoUrl: undefined, annees: JSON.stringify(_anneesDisponibles)});
 }
@@ -14983,12 +15009,12 @@ function generateCodeFor(seed){
 
 function _cacheData(){
   try {
-    localStorage.setItem('mc_payments',    JSON.stringify(payments));
-    localStorage.setItem('mc_excCotis',    JSON.stringify(excCotisations));
-    localStorage.setItem('mc_assistances', JSON.stringify(assistances));
-    localStorage.setItem('mc_depenses',    JSON.stringify(depenses));
-    localStorage.setItem('mc_dons',        JSON.stringify(dons));
-    localStorage.setItem('mc_documents',   JSON.stringify(documents));
+    lsSet('mc_payments', JSON.stringify(payments));
+    lsSet('mc_excCotis', JSON.stringify(excCotisations));
+    lsSet('mc_assistances', JSON.stringify(assistances));
+    lsSet('mc_depenses', JSON.stringify(depenses));
+    lsSet('mc_dons', JSON.stringify(dons));
+    lsSet('mc_documents', JSON.stringify(documents));
   } catch(e){}
 }
 
@@ -15251,7 +15277,7 @@ function showReadonlyBanner(){
 (function restoreAllCache(){
   try {
     // 1. Restaurer les données membres
-    const mc = localStorage.getItem('mutuelle_members_cache');
+    const mc = lsGet('mutuelle_members_cache');
     if(mc){
       const cache = JSON.parse(mc);
       cache.forEach(cm=>{
@@ -15269,24 +15295,24 @@ function showReadonlyBanner(){
     }
 
     // 2. Restaurer paiements, dons, dépenses, etc.
-    const mb_cache = localStorage.getItem('mc_members');
+    const mb_cache = lsGet('mc_members');
     if(mb_cache){ try{ members = JSON.parse(mb_cache); }catch(e){} }
-    const p  = localStorage.getItem('mc_payments');    if(p)  payments       = JSON.parse(p);
-    const ec = localStorage.getItem('mc_excCotis');    if(ec) excCotisations = JSON.parse(ec);
-    const as = localStorage.getItem('mc_assistances'); if(as) assistances    = JSON.parse(as);
-    const dp = localStorage.getItem('mc_depenses');    if(dp) depenses       = JSON.parse(dp);
-    const dn = localStorage.getItem('mc_dons');        if(dn) dons           = JSON.parse(dn);
-    const pt = localStorage.getItem('mc_patrimoine'); if(pt) loadPatrimoine(JSON.parse(pt));
-    const cpt=localStorage.getItem('mc_comptes');const txl=localStorage.getItem('mc_transactions');
+    const p  = lsGet('mc_payments');    if(p)  payments       = JSON.parse(p);
+    const ec = lsGet('mc_excCotis');    if(ec) excCotisations = JSON.parse(ec);
+    const as = lsGet('mc_assistances'); if(as) assistances    = JSON.parse(as);
+    const dp = lsGet('mc_depenses');    if(dp) depenses       = JSON.parse(dp);
+    const dn = lsGet('mc_dons');        if(dn) dons           = JSON.parse(dn);
+    const pt = lsGet('mc_patrimoine'); if(pt) loadPatrimoine(JSON.parse(pt));
+    const cpt=lsGet('mc_comptes');const txl=lsGet('mc_transactions');
     if(cpt||txl) loadComptes({comptes:cpt?JSON.parse(cpt):[],transactions:txl?JSON.parse(txl):[]});
-    const pj=localStorage.getItem('mc_projets');const pjp=localStorage.getItem('mc_projets_pay');
+    const pj=lsGet('mc_projets');const pjp=lsGet('mc_projets_pay');
     if(pj||pjp) loadProjets({projets:pj?JSON.parse(pj):[],projetsPaiements:pjp?JSON.parse(pjp):[]});
-    const pr = localStorage.getItem('mc_prets'); const rb = localStorage.getItem('mc_remboursements'); if(pr||rb) loadPrets({prets:pr?JSON.parse(pr):[],remboursements:rb?JSON.parse(rb):[]});
+    const pr = lsGet('mc_prets'); const rb = lsGet('mc_remboursements'); if(pr||rb) loadPrets({prets:pr?JSON.parse(pr):[],remboursements:rb?JSON.parse(rb):[]});
     // Documents : toujours chargés depuis Sheets — pas de cache local
     // (pour garantir les fileUrl Google Drive)
 
     // 3. Restaurer ANNEE_CONFIG depuis le branding localStorage
-    const savedBranding = localStorage.getItem('mutuelle_branding');
+    const savedBranding = lsGet('mutuelle_branding');
     if(savedBranding){
       try {
         const b = JSON.parse(savedBranding);
