@@ -1898,17 +1898,20 @@ html, body {
 
           <!-- ═══ SECTION RECETTES ═══ -->
           <div class="section-ag" id="bag-section-cotisations"></div>
+          <div class="section-ag" id="bag-section-exc-cotis"></div>
           <div class="section-ag" id="bag-section-dons"></div>
 
           <!-- ═══ SECTION DÉPENSES ASSISTANCES ═══ -->
           <div class="section-ag" id="bag-section-maternite"></div>
           <div class="section-ag" id="bag-section-mariage"></div>
           <div class="section-ag" id="bag-section-maladie"></div>
+          <div class="section-ag" id="bag-section-accident"></div>
           <div class="section-ag" id="bag-section-depart"></div>
           <div class="section-ag" id="bag-section-deces-membre"></div>
           <div class="section-ag" id="bag-section-deces-parent"></div>
           <div class="section-ag" id="bag-section-deces-enfant"></div>
           <div class="section-ag" id="bag-section-deces-conjoint"></div>
+          <div class="section-ag" id="bag-section-autre-assist"></div>
 
           <!-- ═══ SECTION DÉPENSES ═══ -->
           <div class="section-ag" id="bag-section-fonctionnement"></div>
@@ -8786,8 +8789,13 @@ function genererBilanAG(){
   // ─────────────────────────────────────
   const cotisRows = [];
   let totalCotis = 0;
+  // Filtrer selon le mode de période
+  const paymentsPeriode = dateDebutStr && dateFinStr
+    ? payments.filter(p=>{ const d=p.date||`${p.annee||annee}-${String(p.mois||1).padStart(2,'0')}-01`; return d>=dateDebutStr&&d<=dateFinStr; })
+    : payments.filter(p=>String(p.annee||'')===String(annee)&&Number(p.mois)>=moisDebut&&Number(p.mois)<=moisFin);
+
   for(let m=moisDebut; m<=moisFin; m++){
-    const montantMois = payments.filter(p=>p.annee==annee&&Number(p.mois)===m).reduce((s,p)=>s+Number(p.montant||0),0);
+    const montantMois = paymentsPeriode.filter(p=>Number(p.mois)===m).reduce((s,p)=>s+Number(p.montant||0),0);
     if(montantMois>0 || moisDebut===moisFin){
       cotisRows.push([MOIS_FR[m], 'COTISATION MENSUELLE', `<span style="font-family:var(--mono);font-weight:600">${fmt(montantMois)}</span>`]);
       totalCotis+=montantMois;
@@ -8797,46 +8805,66 @@ function genererBilanAG(){
     ['MOIS','DÉSIGNATION','RECETTES (FCFA)'], cotisRows, totalCotis);
 
   // ─────────────────────────────────────
-  // 2. DONS ET REVENUS
+  // 2. COTISATIONS EXCEPTIONNELLES
+  // ─────────────────────────────────────
+  const excPaimentsPeriode = [];
+  excCotisations.forEach(exc=>{
+    if(!exc.paiements) return;
+    Object.entries(exc.paiements).forEach(([code, montant])=>{
+      excPaimentsPeriode.push({exc, code, montant:Number(montant)||0});
+    });
+  });
+  const excInPeriode = excPaimentsPeriode; // Tous affichés (pas de date sur les paiements exc)
+  const totalExc = excInPeriode.reduce((s,p)=>s+p.montant,0);
+  bagTableSection('bag-section-exc-cotis','COTISATIONS EXCEPTIONNELLES','#1E40AF',
+    ['MOTIF / DÉSIGNATION','BÉNÉFICIAIRE / MEMBRE','MONTANT (FCFA)'],
+    excInPeriode.map(p=>{
+      const mb=getMemberByCode(p.code);
+      return [p.exc.motif||'—', mb?(mb.prenom||'')+' '+mb.nom:p.code, `<span style="font-family:var(--mono)">${fmt(p.montant)}</span>`];
+    }), totalExc);
+
+  // ─────────────────────────────────────
+  // 3. DONS ET REVENUS
   // ─────────────────────────────────────
   const donsP = dons.filter(d=>inP(d.date));
   const totalDons = donsP.reduce((s,d)=>s+Number(d.montant||0),0);
   bagTableSection('bag-section-dons','DONS ET REVENUS','#1E40AF',
-    ['DATE','NOM DU DONATEUR','TYPE','DESCRIPTION','MONTANT (FCFA)'],
+    ['DATE','NOM DU DONATEUR / ACTIVITÉ','TYPE','DESCRIPTION','MONTANT (FCFA)'],
     donsP.map(d=>[new Date(d.date).toLocaleDateString('fr-FR'), d.donateur||'—', d.type==='especes'?'💵 Espèces':'📦 Nature', d.natureDesc||'—', `<span style="font-family:var(--mono)">${fmt(Number(d.montant||0))}</span>`]),
     totalDons);
 
   // ─────────────────────────────────────
-  // 3. ASSISTANCES par type
+  // 4. ASSISTANCES par type (10 types)
   // ─────────────────────────────────────
   const assistTypes = [
-    {key:'maternite',      id:'bag-section-maternite',    label:'MATERNITÉ',                 color:'#065F46'},
-    {key:'mariage',        id:'bag-section-mariage',      label:'MARIAGES',                  color:'#065F46'},
-    {key:'maladie',        id:'bag-section-maladie',      label:'MALADIE / HOSPITALISATIONS',color:'#065F46'},
-    {key:'depart_definitif',id:'bag-section-depart',      label:'DÉPARTS DÉFINITIFS',         color:'#065F46'},
-    {key:'deces_membre',   id:'bag-section-deces-membre', label:'DÉCÈS MEMBRES',             color:'#1F2937'},
-    {key:'deces_parent',   id:'bag-section-deces-parent', label:'DÉCÈS PARENTS',             color:'#1F2937'},
-    {key:'deces_enfant',   id:'bag-section-deces-enfant', label:'DÉCÈS ENFANTS',             color:'#1F2937'},
-    {key:'deces_conjoint', id:'bag-section-deces-conjoint',label:'DÉCÈS CONJOINT(E)S',       color:'#1F2937'},
+    {key:'maternite',       id:'bag-section-maternite',     label:'MATERNITÉ',                  color:'#065F46'},
+    {key:'mariage',         id:'bag-section-mariage',       label:'MARIAGES',                   color:'#065F46'},
+    {key:'maladie',         id:'bag-section-maladie',       label:'MALADIE / HOSPITALISATIONS', color:'#065F46'},
+    {key:'accident',        id:'bag-section-accident',      label:'ACCIDENTS',                  color:'#B45309'},
+    {key:'depart_definitif',id:'bag-section-depart',        label:'DÉPARTS DÉFINITIFS',          color:'#065F46'},
+    {key:'deces_membre',    id:'bag-section-deces-membre',  label:'DÉCÈS MEMBRES',              color:'#1F2937'},
+    {key:'deces_parent',    id:'bag-section-deces-parent',  label:'DÉCÈS PARENTS',              color:'#1F2937'},
+    {key:'deces_enfant',    id:'bag-section-deces-enfant',  label:'DÉCÈS ENFANTS',              color:'#1F2937'},
+    {key:'deces_conjoint',  id:'bag-section-deces-conjoint',label:'DÉCÈS CONJOINT(E)S',         color:'#1F2937'},
+    {key:'autre',           id:'bag-section-autre-assist',  label:'AUTRES ASSISTANCES',         color:'#4B5563'},
   ];
   assistTypes.forEach(({key,id,label,color})=>{
     const list = assistances.filter(a=>a.type===key&&inP(a.dateVerse||a.dateEvent));
     const total = list.reduce((s,a)=>s+Number(a.montant||0),0);
-    const m=getMemberByCode;
     bagTableSection(id,'LISTE DES CAS DE '+label,color,
       ['DATE DE VERSEMENT','MOTIF / DESCRIPTION','BÉNÉFICIAIRE','MONTANT ACCORDÉ (FCFA)'],
       list.map(a=>{
-        const mb=m(a.memberCode);
+        const mb=getMemberByCode(a.memberCode);
         return [a.dateVerse?new Date(a.dateVerse).toLocaleDateString('fr-FR'):'—', a.motif||'—', mb?(mb.prenom||'')+' '+mb.nom:a.memberCode, `<span style="font-family:var(--mono)">${fmt(Number(a.montant||0))}</span>`];
       }), total);
   });
 
   // ─────────────────────────────────────
-  // 4. DÉPENSES par type
+  // 5. DÉPENSES par type
   // ─────────────────────────────────────
   const depTypes = [
     {key:'fonctionnement', id:'bag-section-fonctionnement', label:'DÉPENSES DE FONCTIONNEMENT', color:'#92400E', hasCat:true},
-    {key:'autres',         id:'bag-section-autres-dep',     label:'AUTRES DÉPENSES',           color:'#92400E', hasCat:false},
+    {key:'autres',         id:'bag-section-autres-dep',     label:'AUTRES DÉPENSES',            color:'#92400E', hasCat:false},
     {key:'activite',       id:'bag-section-activite',       label:'DÉPENSES LIÉES À UNE ACTIVITÉ',color:'#92400E', hasCat:false, hasAct:true},
   ];
   depTypes.forEach(({key,id,label,color,hasCat,hasAct})=>{
@@ -8858,10 +8886,11 @@ function genererBilanAG(){
   });
 
   // ─────────────────────────────────────
-  // 5. BILAN GÉNÉRAL
+  // 6. BILAN GÉNÉRAL
   // ─────────────────────────────────────
   const recettes = {
     cotisations: totalCotis,
+    cotisationsExc: totalExc,
     dons: totalDons,
   };
   const totalRecettes = Object.values(recettes).reduce((s,v)=>s+v,0);
@@ -8879,6 +8908,7 @@ function genererBilanAG(){
   const recettesRows = [
     ['Solde excédentaire exercice précédent', '—'],
     ['Total cotisations mensuelles', fmt(recettes.cotisations)+' FCFA'],
+    ['Total cotisations exceptionnelles', fmt(recettes.cotisationsExc)+' FCFA'],
     ['Total dons & revenus', fmt(recettes.dons)+' FCFA'],
   ];
   const depensesRows = Object.entries(depensesAG).map(([k,v])=>[k, fmt(v)+' FCFA']);
@@ -8911,7 +8941,36 @@ function genererBilanAG(){
       <div style="font-size:28px;font-weight:800;color:${solde<0?'#DC2626':'#16A34A'};font-family:var(--mono)">
         ${solde>=0?'+':''}${fmt(solde)} FCFA
       </div>
+    </div>
+
+    <!-- Déduction prêts restants -->
+    ${(()=>{
+      const _pretsEnCours = prets.filter(p=>getPretStatut?.(p)!=='solde');
+      const _resteTotal = _pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant?.(p)||0),0);
+      const _soldeNet = solde - _resteTotal;
+      return `
+    <div style="margin-top:8px;background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:10px;padding:14px 20px">
+      <div style="font-size:12px;font-weight:700;color:#4C1D95;margin-bottom:10px">🏦 DÉDUCTION DES PRÊTS EN COURS</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
+        <span style="color:var(--gray-600)">Solde de la période</span>
+        <span style="font-family:var(--mono);font-weight:600;color:${solde>=0?'#16A34A':'#DC2626'}">${solde>=0?'+':''}${fmt(solde)} FCFA</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;padding-bottom:10px;border-bottom:1px dashed #C4B5FD">
+        <span style="color:#7C3AED">Total prêts restants à rembourser (${_pretsEnCours.length} prêt(s) en cours)</span>
+        <span style="font-family:var(--mono);font-weight:700;color:#DC2626">− ${fmt(_resteTotal)} FCFA</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#4C1D95">SOLDE DISPONIBLE NET</div>
+          <div style="font-size:11px;color:var(--gray-500)">Solde − Prêts restants</div>
+        </div>
+        <div style="font-size:24px;font-weight:800;font-family:var(--mono);color:${_soldeNet>=0?'#4C1D95':'#DC2626'}">
+          ${_soldeNet>=0?'+':''}${fmt(_soldeNet)} FCFA
+        </div>
+      </div>
     </div>`;
+    })()}`;
+
 
   // ─────────────────────────────────────
   // 6. PRÊTS
@@ -10163,12 +10222,15 @@ function renderProjetDetail(id){
 
 // ── Supprimer projet ──
 function deleteProjet(id){
-  if(!confirm('Supprimer ce projet et tous ses paiements ?')) return;
-  projets=projets.filter(p=>p.id!==id);
-  projetsPaiements=projetsPaiements.filter(p=>p.projetId!==id);
-  dbPost('deleteProjet',{id});
-  renderProjetsAdmin();
-  _showDocToast('✅ Projet supprimé');
+  customConfirm('Supprimer ce projet et tous ses paiements associés ?','Supprimer le projet','Supprimer').then(ok=>{
+    if(!ok) return;
+    projets = projets.filter(p=>p.id!==id);
+    projetsPaiements = projetsPaiements.filter(p=>p.projetId!==id);
+    dbPost('deleteProjet', {id});
+    dbPost('deleteProjPaiements', {projetId:id});
+    renderProjetsAdmin();
+    _showDocToast('✅ Projet supprimé');
+  });
 }
 
 // ── Export PDF Projet ──
@@ -10329,14 +10391,17 @@ function loadProjets(data){
       montantCible: Number(p.montantCible||0),
       cout:         Number(p.cout||0),
       nbParticipants: Number(p.nbParticipants||0),
-      statut: p.statut||'preparation',
+      statut:      p.statut||'preparation',
       periodicite: p.periodicite||'mensuel',
       typeRepartition: p.typeRepartition||'egale',
-      // repartition stocké en JSON string dans Sheets
       repartition: (()=>{
-        if(Array.isArray(p.repartition)) return p.repartition;
-        if(typeof p.repartition==='string' && p.repartition.trim().startsWith('[')){
-          try{ return JSON.parse(p.repartition); }catch(e){ return []; }
+        const r = p.repartition;
+        if(Array.isArray(r)) return r;
+        if(typeof r === 'string'){
+          const trimmed = r.trim();
+          if(trimmed.startsWith('[')) try{ return JSON.parse(trimmed); }catch(e){}
+          // Cas "[object Object]" → données corrompues → tableau vide
+          if(trimmed.includes('[object')) return [];
         }
         return [];
       })(),
