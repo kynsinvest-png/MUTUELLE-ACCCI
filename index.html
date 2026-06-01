@@ -1900,6 +1900,7 @@ html, body {
           <div class="section-ag" id="bag-section-cotisations"></div>
           <div class="section-ag" id="bag-section-exc-cotis"></div>
           <div class="section-ag" id="bag-section-dons"></div>
+          <div class="section-ag" id="bag-section-adhesion"></div>
 
           <!-- ═══ SECTION DÉPENSES ASSISTANCES ═══ -->
           <div class="section-ag" id="bag-section-maternite"></div>
@@ -1990,6 +1991,7 @@ html, body {
       <!-- ══ PAGE : PROJETS MEMBRE ══ -->
       <div class="page" id="page-projets-member">
         <div class="card-title" style="margin-bottom:16px">🏗️ Mes Projets</div>
+        <div id="projets-member-stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px"></div>
         <div id="projets-member-list"></div>
       </div>
 
@@ -4093,6 +4095,17 @@ async function loadFromSheets(){
         try { lsSet('mutuelle_annees', JSON.stringify(_anneesDisponibles)); } catch(e){}
       } catch(e){}
     }
+    // Restaurer la config modules si présente dans le branding Sheets
+    if(branding.modules_config){
+      try{
+        const mc = typeof branding.modules_config==='string'
+          ? JSON.parse(branding.modules_config)
+          : branding.modules_config;
+        modulesConfig = {...modulesConfig, ...mc};
+        lsSet('mc_modules_config', JSON.stringify(modulesConfig));
+        applyModulesConfig();
+      }catch(e){}
+    }
     // Sauvegarder dans localStorage (logo inclus — pour les prochains chargements)
     saveBrandingToStorage();
     applyBranding();
@@ -5032,6 +5045,14 @@ function appendItem(container, item, indent){
 }
 
 function showPage(id){
+  // Vérifier que le module n'est pas masqué par la config
+  if(currentRole==='admin' && _hiddenAdminModules.includes(id)){
+    _showDocToast('⚠️ Ce module est désactivé dans la configuration.');
+    return;
+  }
+  if(currentRole==='member' && _hiddenMemberModules.includes(id)){
+    return;
+  }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pageEl = document.getElementById(id);
   if(!pageEl){ console.warn('[showPage] Page introuvable:', id); return; }
@@ -5284,13 +5305,27 @@ function renderAdminDashboard(){
     return yr === anneeNum;
   });
 
+  // ── Prêts en cours (capital restant) ──
+  const _pretsEnCours  = prets.filter(p=>getPretStatut&&getPretStatut(p)!=='solde');
+  const _totalPretRest = _pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant?.(p)||0),0);
+  const _totalCollecteAnne = totalCollecte; // cotisations
+  const _totalDepAnne  = depenses.filter(d=>String(d.annee||'')===String(annee)||String(d.date||'').startsWith(String(annee))).reduce((s,d)=>s+Number(d.montant||0),0);
+  const _totalAssistAnne = assistances.filter(a=>{ const d=a.dateVerse||a.dateEvent||''; return String(d).startsWith(String(annee)); }).reduce((s,a)=>s+Number(a.montant||0),0);
+  const _soldeBrut = totalCollecte
+    + excCotisations.reduce((s,e)=>s+Object.values(e.paiements||{}).reduce((ss,v)=>ss+Number(v||0),0),0)
+    + dons.filter(d=>String(d.date||'').startsWith(String(annee))&&d.type==='especes').reduce((s,d)=>s+Number(d.montant||0),0)
+    - _totalDepAnne - _totalAssistAnne;
+  const _soldeNet = _soldeBrut - _totalPretRest;
+
   document.getElementById('admin-stats').innerHTML=`
     <div class="stat-card blue"><div class="stat-label">Membres actifs</div><div class="stat-value">${actifs.length}</div><div class="stat-sub">${inactifs.length} inactif(s)</div></div>
     <div class="stat-card green"><div class="stat-label">Total collecté ${annee}</div><div class="stat-value">${(totalCollecte/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalCollecte)}</div></div>
     <div class="stat-card orange"><div class="stat-label">Restant à collecter ${annee}</div><div class="stat-value">${(totalSolde/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalSolde)}</div></div>
     <div class="stat-card ${totalRestantMoisActuel===0?'green':''}"><div class="stat-label">Restant dû au mois de ${moisCurAdmin}</div><div class="stat-value" style="color:${totalRestantMoisActuel===0?'var(--green)':'#DC2626'}">${(totalRestantMoisActuel/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalRestantMoisActuel)}</div></div>
     <div class="stat-card ${nbAjourMoisActuel===actifs.length?'green':''}"><div class="stat-label">À jour au mois de ${moisCurAdmin}</div><div class="stat-value">${nbAjourMoisActuel}/${actifs.length}</div><div class="stat-sub">${actifs.length-nbAjourMoisActuel} en retard</div></div>
-    <div class="stat-card purple"><div class="stat-label">Nouvelles adhésions ${annee}</div><div class="stat-value">${nouvellesAdhesions.length}</div><div class="stat-sub">${nouvellesAdhesions.length>0?'Dernier : '+new Date(nouvellesAdhesions.sort((a,b)=>new Date(b.date)-new Date(a.date))[0].date).toLocaleDateString('fr-FR'):'Aucune cette année'}</div></div>`;
+    <div class="stat-card purple"><div class="stat-label">Nouvelles adhésions ${annee}</div><div class="stat-value">${nouvellesAdhesions.length}</div><div class="stat-sub">${nouvellesAdhesions.length>0?'Dernier : '+new Date(nouvellesAdhesions.sort((a,b)=>new Date(b.date)-new Date(a.date))[0].date).toLocaleDateString('fr-FR'):'Aucune cette année'}</div></div>
+    <div class="stat-card" style="background:#F5F3FF;border:1px solid #DDD6FE"><div class="stat-label" style="color:#7C3AED">Prêts restants à rembourser</div><div class="stat-value" style="color:#7C3AED;font-size:18px">${((_totalPretRest)/1000).toFixed(0)}K</div><div class="stat-sub" style="color:#7C3AED">${_pretsEnCours.length} prêt(s) en cours · ${fmt(_totalPretRest)} FCFA</div></div>
+    <div class="stat-card" style="background:${_soldeNet>=0?'#F0FDF4':'#FEF2F2'};border:1px solid ${_soldeNet>=0?'#BBF7D0':'#FECACA'}"><div class="stat-label" style="color:${_soldeNet>=0?'#166534':'#991B1B'}">Solde disponible net ${annee}</div><div class="stat-value" style="color:${_soldeNet>=0?'#16A34A':'#DC2626'};font-size:18px">${(_soldeNet/1000).toFixed(0)}K</div><div class="stat-sub" style="color:${_soldeNet>=0?'#166534':'#991B1B'}">Recettes − Dép. − Prêts restants</div></div>`;
 
   const prog = document.getElementById('month-progress');
   prog.innerHTML = moisActifsAnnee.map((mn)=>{
@@ -8860,6 +8895,28 @@ function genererBilanAG(){
     totalDons);
 
   // ─────────────────────────────────────
+  // 3b. DROITS D'ADHÉSION
+  // ─────────────────────────────────────
+  // Les droits d'adhésion sont liés aux membres selon leur date d'adhésion
+  const membresAvecDroit = members.filter(m=>{
+    if(!m.droitPaye || !m.droitMontant) return false;
+    if(!dateDebutStr) return String(m.anneeAdhesion||m.date?.substring(0,4)||annee)===String(annee);
+    const dateAdh = m.date||'';
+    return dateAdh>=dateDebutStr && dateAdh<=dateFinStr;
+  });
+  const totalDroits = membresAvecDroit.reduce((s,m)=>s+Number(m.droitMontant||0),0);
+  bagTableSection('bag-section-adhesion','DROITS D\'ADHÉSION','#1E40AF',
+    ['N°','NOM ET PRÉNOM','CODE','DATE D\'ADHÉSION','MONTANT DROIT (FCFA)'],
+    membresAvecDroit.map(m=>[
+      m.num||'—',
+      m.nom||(m.prenom?m.prenom+' ':'')||(m.nom||'—'),
+      m.code||'—',
+      m.date?new Date(m.date).toLocaleDateString('fr-FR'):'—',
+      `<span style="font-family:var(--mono)">${fmt(Number(m.droitMontant||0))}</span>`
+    ]),
+    totalDroits);
+
+  // ─────────────────────────────────────
   // 4. ASSISTANCES par type (10 types)
   // ─────────────────────────────────────
   const assistTypes = [
@@ -8915,9 +8972,10 @@ function genererBilanAG(){
   // 6. BILAN GÉNÉRAL
   // ─────────────────────────────────────
   const recettes = {
-    cotisations: totalCotis,
+    cotisations:    totalCotis,
     cotisationsExc: totalExc,
-    dons: totalDons,
+    droitsAdhesion: totalDroits,
+    dons:           totalDons,
   };
   const totalRecettes = Object.values(recettes).reduce((s,v)=>s+v,0);
 
@@ -8933,9 +8991,10 @@ function genererBilanAG(){
 
   const recettesRows = [
     ['Solde excédentaire exercice précédent', '—'],
-    ['Total cotisations mensuelles', fmt(recettes.cotisations)+' FCFA'],
-    ['Total cotisations exceptionnelles', fmt(recettes.cotisationsExc)+' FCFA'],
-    ['Total dons & revenus', fmt(recettes.dons)+' FCFA'],
+    ['Total cotisations mensuelles',          fmt(recettes.cotisations)+' FCFA'],
+    ['Total cotisations exceptionnelles',     fmt(recettes.cotisationsExc)+' FCFA'],
+    ['Total droits d\'adhésion ('+membresAvecDroit.length+' membre(s))', fmt(recettes.droitsAdhesion)+' FCFA'],
+    ['Total dons & revenus / AGR',            fmt(recettes.dons)+' FCFA'],
   ];
   const depensesRows = Object.entries(depensesAG).map(([k,v])=>[k, fmt(v)+' FCFA']);
 
@@ -8974,26 +9033,43 @@ function genererBilanAG(){
       const _pretsEnCours = prets.filter(p=>getPretStatut?.(p)!=='solde');
       const _resteTotal = _pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant?.(p)||0),0);
       const _soldeNet = solde - _resteTotal;
+      const _dateRef = dateFin || (annee+'-12-31');
+      const _dateRefFmt = new Date(_dateRef).toLocaleDateString('fr-FR');
       return `
     <div style="margin-top:8px;background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:10px;padding:14px 20px">
-      <div style="font-size:12px;font-weight:700;color:#4C1D95;margin-bottom:10px">🏦 DÉDUCTION DES PRÊTS EN COURS</div>
+      <div style="font-size:12px;font-weight:700;color:#4C1D95;margin-bottom:10px">🏦 DÉDUCTION DES PRÊTS EN COURS — À la date du ${_dateRefFmt}</div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
         <span style="color:var(--gray-600)">Solde de la période</span>
         <span style="font-family:var(--mono);font-weight:600;color:${solde>=0?'#16A34A':'#DC2626'}">${solde>=0?'+':''}${fmt(solde)} FCFA</span>
       </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
+        <span style="color:#7C3AED">Nombre de prêts en cours</span>
+        <span style="font-weight:700;color:#7C3AED">${_pretsEnCours.length} prêt(s)</span>
+      </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;padding-bottom:10px;border-bottom:1px dashed #C4B5FD">
-        <span style="color:#7C3AED">Total prêts restants à rembourser (${_pretsEnCours.length} prêt(s) en cours)</span>
+        <span style="color:#7C3AED">Capital restant total à rembourser</span>
         <span style="font-family:var(--mono);font-weight:700;color:#DC2626">− ${fmt(_resteTotal)} FCFA</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>
           <div style="font-size:13px;font-weight:700;color:#4C1D95">SOLDE DISPONIBLE NET</div>
-          <div style="font-size:11px;color:var(--gray-500)">Solde − Prêts restants</div>
+          <div style="font-size:11px;color:var(--gray-500)">Solde de la période − Capital prêts restants</div>
         </div>
         <div style="font-size:24px;font-weight:800;font-family:var(--mono);color:${_soldeNet>=0?'#4C1D95':'#DC2626'}">
           ${_soldeNet>=0?'+':''}${fmt(_soldeNet)} FCFA
         </div>
       </div>
+      ${_pretsEnCours.length>0?`<div style="margin-top:10px;padding-top:8px;border-top:1px solid #DDD6FE;font-size:11px;color:#6B7280">
+        <div style="font-weight:600;color:#4C1D95;margin-bottom:4px">Détail des prêts en cours :</div>
+        ${_pretsEnCours.map(p=>{
+          const mb=getMemberByCode(p.memberCode);
+          const cap=Number(getPretCapitalRestant?.(p)||0);
+          return `<div style="display:flex;justify-content:space-between;padding:2px 0">
+            <span>${mb?(mb.prenom||'')+' '+mb.nom:p.memberCode}</span>
+            <span style="font-family:var(--mono);color:#7C3AED">− ${fmt(cap)} FCFA</span>
+          </div>`;
+        }).join('')}
+      </div>`:''}
     </div>`;
     })()}`;
 
@@ -9108,9 +9184,35 @@ function exportBilanAGExcel(){
   cotisData.push(['TOTAL','',totalCotis]);
   sheets.push({name:'Cotisations', data:cotisData});
 
-  // ─── Feuille 2 : DONS ET REVENUS
+  // ─── Feuille 2 : COTISATIONS EXCEPTIONNELLES
+  const excData=[['MOTIF','DESCRIPTION','MONTANT ATTENDU','DATE LIMITE','STATUT','MEMBRE PAYEUR','MONTANT PAYÉ (FCFA)']];
+  let totalExcEl=0;
+  excCotisations.forEach(exc=>{
+    if(!exc.paiements) return;
+    Object.entries(exc.paiements).forEach(([code,montant])=>{
+      const mb=getMemberByCode(code);
+      excData.push([exc.motif||'',exc.desc||'',Number(exc.montant||0),exc.dateLimite||'',exc.statut||'',
+        mb?(mb.prenom||'')+' '+mb.nom:code, Number(montant||0)]);
+      totalExcEl+=Number(montant||0);
+    });
+  });
+  excData.push(['TOTAL','','','','','',totalExcEl]);
+  sheets.push({name:'Cotis. Exceptionnelles', data:excData});
+
+  // ─── Feuille 3 : DROITS D'ADHÉSION
+  const droitsData=[['N°','NOM ET PRÉNOM','CODE','DATE ADHÉSION','MONTANT DROIT (FCFA)']];
+  let totalDroitsEl=0;
+  const membresAvecDroitEl=members.filter(m=>m.droitPaye&&m.droitMontant);
+  membresAvecDroitEl.forEach(m=>{
+    droitsData.push([m.num||'',m.nom||'',m.code||'',m.date?new Date(m.date).toLocaleDateString('fr-FR'):'',Number(m.droitMontant||0)]);
+    totalDroitsEl+=Number(m.droitMontant||0);
+  });
+  droitsData.push(['TOTAL','','','',totalDroitsEl]);
+  sheets.push({name:'Droits Adhésion', data:droitsData});
+
+  // ─── Feuille 4 : DONS ET REVENUS
   const donsP=dons.filter(d=>inP(d.date));
-  const donsData=[['DATE','DONATEUR','TYPE','DESCRIPTION','MONTANT (FCFA)']];
+  const donsData=[['DATE','DONATEUR / ACTIVITÉ','TYPE','DESCRIPTION','MONTANT (FCFA)']];
   donsP.forEach(d=>donsData.push([
     d.date?new Date(d.date).toLocaleDateString('fr-FR'):'',
     d.donateur||'', d.type||'', d.natureDesc||'', Number(d.montant||0)
@@ -9149,8 +9251,9 @@ function exportBilanAGExcel(){
   depData.push(['TOTAL','','','','','',totalDep]);
   sheets.push({name:'Dépenses', data:depData});
 
-  // ─── Feuille 5 : BILAN GÉNÉRAL
-  const totalRecettes=totalCotis+donsP.reduce((s,d)=>s+Number(d.montant||0),0);
+  // ─── Feuille 7 : BILAN GÉNÉRAL
+  const totalDonsEl = donsP.reduce((s,d)=>s+Number(d.montant||0),0);
+  const totalRecettes=totalCotis+totalExcEl+totalDroitsEl+totalDonsEl;
   const totalDepenses=totalAssist+totalDep;
   const solde=totalRecettes-totalDepenses;
   const totalRembPret=remboursements.reduce((s,r)=>s+Number(r.montant||0),0);
@@ -9161,23 +9264,26 @@ function exportBilanAGExcel(){
     ['',''],
     ['LES RECETTES','MONTANT (FCFA)'],
     ['Cotisations mensuelles',totalCotis],
-    ['Dons et revenus',donsP.reduce((s,d)=>s+Number(d.montant||0),0)],
+    ['Cotisations exceptionnelles',totalExcEl],
+    ['Droits d\'adhésion ('+membresAvecDroitEl.length+' membre(s))',totalDroitsEl],
+    ['Dons et revenus / AGR',totalDonsEl],
     ['TOTAL RECETTES',totalRecettes],
     ['',''],
     ['LES DÉPENSES','MONTANT (FCFA)'],
-    ['Total assistances',totalAssist],
-    ['Total dépenses',totalDep],
+    ['Total assistances (10 types)',totalAssist],
+    ['Total dépenses (fonctionnement + autres + activité)',totalDep],
     ['TOTAL DÉPENSES',totalDepenses],
     ['',''],
-    ['SOLDE (Recettes - Dépenses)',solde],
-    ['Capital prêts en cours',totalCapPret],
-    ['Remboursements reçus',totalRembPret],
-    ['Reste à rembourser (prêts)',resteRembourser],
-    ['SOLDE DISPONIBLE (Solde - Prêts restants)',solde-resteRembourser],
+    ['SOLDE DE LA PÉRIODE (Recettes - Dépenses)',solde],
+    ['',''],
+    ['Capital total prêts en cours',totalCapPret],
+    ['Total remboursements reçus',totalRembPret],
+    ['Reste à rembourser (prêts en cours)',resteRembourser],
+    ['SOLDE DISPONIBLE NET (Solde - Prêts restants)',solde-resteRembourser],
   ];
   sheets.push({name:'Bilan Général', data:bilanData});
 
-  // ─── Feuille 6 : PRÊTS EN COURS
+  // ─── Feuille 8 : PRÊTS EN COURS
   const pretsEnCours=prets.filter(p=>getPretStatut(p)!=='solde');
   const pretsData=[['DATE DÉBLOCAGE','NOM ET PRÉNOMS','CODE','MONTANT ACCORDÉ','REMBOURSÉ','CAPITAL RESTANT','STATUT']];
   pretsEnCours.forEach(p=>{
@@ -10355,6 +10461,64 @@ function renderProjetsMemeber(){
   const mesProjets=projets.filter(p=>p.repartition?.some(r=>r.code===currentMember.code));
   const el=document.getElementById('projets-member-list');
   if(!el) return;
+
+  // ── Statistiques globales ──
+  const statsEl = document.getElementById('projets-member-stats');
+  if(statsEl){
+    if(!mesProjets.length){
+      statsEl.innerHTML='';
+    } else {
+      let totalQuota=0, totalPaye=0, nbAjour=0, nbRetard=0, nbTermines=0, nbEnCours=0, nbPrep=0;
+      mesProjets.forEach(p=>{
+        const quota = getProjetMontantMembre(p, currentMember.code);
+        const paye  = getProjetPaiementsMembre(p.id, currentMember.code);
+        const statut= getProjetStatutMembre(p, currentMember.code);
+        totalQuota += quota;
+        totalPaye  += paye;
+        if(statut==='ajour') nbAjour++; else nbRetard++;
+        if(p.statut==='termine') nbTermines++;
+        else if(p.statut==='encours') nbEnCours++;
+        else nbPrep++;
+      });
+      const totalRestant = Math.max(0, totalQuota - totalPaye);
+      const pctGlobal = totalQuota>0 ? Math.min(100,Math.round(totalPaye/totalQuota*100)) : 0;
+
+      statsEl.innerHTML=`
+        <div class="stat-card blue">
+          <div class="stat-label">Projets souscrits</div>
+          <div class="stat-value">${mesProjets.length}</div>
+          <div class="stat-sub">${nbEnCours} en cours · ${nbTermines} terminé(s)</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Total payé</div>
+          <div class="stat-value">${(totalPaye/1000).toFixed(0)}K</div>
+          <div class="stat-sub">${fmt(totalPaye)} FCFA</div>
+        </div>
+        <div class="stat-card orange">
+          <div class="stat-label">Montant restant</div>
+          <div class="stat-value" style="color:${totalRestant===0?'var(--green)':'#DC2626'}">${(totalRestant/1000).toFixed(0)}K</div>
+          <div class="stat-sub">${fmt(totalRestant)} FCFA</div>
+        </div>
+        <div class="stat-card" style="background:#F0FDF4;border:1px solid #BBF7D0">
+          <div class="stat-label" style="color:#166534">Progression globale</div>
+          <div class="stat-value" style="color:#16A34A">${pctGlobal}%</div>
+          <div style="background:#D1FAE5;border-radius:99px;height:6px;margin-top:4px;overflow:hidden">
+            <div style="width:${pctGlobal}%;height:100%;background:#16A34A;border-radius:99px"></div>
+          </div>
+        </div>
+        <div class="stat-card ${nbRetard===0?'green':''}">
+          <div class="stat-label">Statut paiements</div>
+          <div class="stat-value" style="color:${nbRetard===0?'var(--green)':'#DC2626'}">${nbAjour}/${mesProjets.length}</div>
+          <div class="stat-sub">${nbRetard===0?'Tout à jour ✅':nbRetard+' en retard ⚠️'}</div>
+        </div>
+        <div class="stat-card purple">
+          <div class="stat-label">Mon quota total</div>
+          <div class="stat-value">${(totalQuota/1000).toFixed(0)}K</div>
+          <div class="stat-sub">${fmt(totalQuota)} FCFA</div>
+        </div>`;
+    }
+  }
+
   if(!mesProjets.length){el.innerHTML='<div style="text-align:center;padding:40px;color:var(--gray-400)">Vous ne participez à aucun projet</div>';return;}
 
   el.innerHTML=mesProjets.map(p=>{
@@ -10487,6 +10651,8 @@ const CONFIGURABLE_MEMBER_MODULES = [
 
 // État de la config — chargé depuis localStorage / branding
 let modulesConfig = {};
+let _hiddenAdminModules = [];
+let _hiddenMemberModules = [];
 
 function loadModulesConfig(){
   try{
@@ -10507,18 +10673,19 @@ function saveConfigModules(){
     if(el) modulesConfig['member_'+m.id] = el.checked;
   });
   lsSet('mc_modules_config', JSON.stringify(modulesConfig));
-  // Sauvegarder dans branding via GAS
   dbPost('saveModulesConfig',{modulesConfig});
-  // Reconstruire les menus
+  // Appliquer et reconstruire
   applyModulesConfig();
   buildSidebar(currentRole||'admin');
+  // Si la page actuelle vient d'être masquée → retour dashboard
+  const activePage = document.querySelector('.page.active')?.id;
+  if(activePage && _hiddenAdminModules.includes(activePage)){
+    showPage('page-dashboard');
+  }
   _showDocToast('✅ Configuration des modules enregistrée');
 }
 
 function applyModulesConfig(){
-  // Filtrer adminNav selon config
-  // Les modules désactivés sont retirés du ADMIN_GROUPS dynamiquement
-  // On stocke la liste des modules masqués
   _hiddenAdminModules = CONFIGURABLE_ADMIN_MODULES
     .filter(m=>modulesConfig['admin_'+m.id]===false)
     .map(m=>m.id);
@@ -10526,9 +10693,6 @@ function applyModulesConfig(){
     .filter(m=>modulesConfig['member_'+m.id]===false)
     .map(m=>m.id);
 }
-
-let _hiddenAdminModules = [];
-let _hiddenMemberModules = [];
 
 function renderConfigModules(){
   // Vérifier que c'est bien le super admin "admin"
@@ -10865,11 +11029,9 @@ function renderPatrimoineAdmin(){
 function renderPatrimoineMember(){
   const patrimoineActif = patrimoine.filter(p=>(p.statut||'actif')==='actif');
   const liste = _patFilterMember==='tous' ? patrimoineActif : patrimoineActif.filter(p=>p.categorie===_patFilterMember);
-  const totalValeur = patrimoineActif.reduce((s,p)=>(s+(Number(p.valeur)||0)*(Number(p.quantite)||1)),0);
 
   document.getElementById('patrimoine-member-stats').innerHTML=`
-    <div class="stat-card blue"><div class="stat-label">Biens de la mutuelle</div><div class="stat-value">${patrimoineActif.reduce((s,p)=>s+(Number(p.quantite)||1),0)}</div><div class="stat-sub">${patrimoineActif.length} type(s)</div></div>
-    <div class="stat-card green"><div class="stat-label">Valeur totale</div><div class="stat-value">${(totalValeur/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalValeur)}</div></div>`;
+    <div class="stat-card blue"><div class="stat-label">Biens de la mutuelle</div><div class="stat-value">${patrimoineActif.reduce((s,p)=>s+(Number(p.quantite)||1),0)}</div><div class="stat-sub">${patrimoineActif.length} type(s)</div></div>`;
 
   const el = document.getElementById('patrimoine-member-list');
   if(!liste.length){
@@ -10882,9 +11044,9 @@ function renderPatrimoineMember(){
         ${PAT_ETAT_LABELS[p.etat]||''}
       </div>
       <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:4px">${p.nom}</div>
-      ${p.localisation?`<div style="font-size:12px;color:var(--gray-600);margin-bottom:4px">📍 ${p.localisation}${p.gps?' &nbsp;<a href="https://www.google.com/maps?q='+p.gps.replace(/,\s*/,',')+'" target="_blank" style="color:var(--blue);font-size:11px">🗺️</a>':''}</div>`:''}${p.description?`<div style="font-size:12px;color:var(--gray-500);margin-bottom:6px">${p.description}</div>`:''}
+      ${p.localisation?`<div style="font-size:12px;color:var(--gray-600);margin-bottom:4px">📍 ${p.localisation}${p.gps?' &nbsp;<a href="https://www.google.com/maps?q='+p.gps.replace(/,\s*/,',')+'" target="_blank" style="color:var(--blue);font-size:11px">🗺️</a>':''}</div>`:''}
+      ${p.description?`<div style="font-size:12px;color:var(--gray-500);margin-bottom:6px">${p.description}</div>`:''}
       <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--gray-500)">
-        ${p.valeur?`<span>💰 <strong style="color:var(--navy)">${fmt(Number(p.valeur)*(Number(p.quantite)||1))}</strong></span>`:''}
         ${p.quantite&&p.quantite>1?`<span>📦 Qté : <strong>${p.quantite}</strong></span>`:''}
         ${p.date?`<span>📅 ${new Date(p.date).toLocaleDateString('fr-FR')}</span>`:''}
       </div>
