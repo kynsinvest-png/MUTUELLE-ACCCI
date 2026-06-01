@@ -6455,12 +6455,24 @@ function saveExc(){
   }
 
   if(idx===-1){
-    const newExc={id:Date.now(),motif,desc,montant,dateCreation,dateLimite,statut,scope,paiements:{}};
-    excCotisations.push(newExc);
-    dbCall('saveExc', newExc);
+    const newExc={
+      id: 'exc_'+Date.now(),
+      motif, desc, montant, dateCreation, dateLimite, statut,
+      scope: Array.isArray(scope) ? JSON.stringify(scope) : scope,
+      paiements: '{}',
+    };
+    excCotisations.push({...newExc, scope, paiements:{}});
+    dbPost('saveExcCotisation', newExc);
+    // Mettre à jour le cache
+    try{ lsSet('mc_excCotis', JSON.stringify(excCotisations)); }catch(e){}
   } else {
-    excCotisations[idx]={...excCotisations[idx],motif,desc,montant,dateCreation,dateLimite,statut,scope};
-    dbCall('updateExc', excCotisations[idx]);
+    const updated={...excCotisations[idx], motif, desc, montant, dateCreation, dateLimite, statut,
+      scope: Array.isArray(scope) ? JSON.stringify(scope) : scope,
+    };
+    excCotisations[idx]={...excCotisations[idx], motif, desc, montant, dateCreation, dateLimite, statut, scope};
+    dbPost('updateExcCotisation', updated);
+    // Mettre à jour le cache
+    try{ lsSet('mc_excCotis', JSON.stringify(excCotisations)); }catch(e){}
   }
   closeModal('modal-exc');
   renderExcAdmin();
@@ -6685,7 +6697,7 @@ function cancelExcPayByIdx(memberIdx){
   const m = window._excDetailMbs[memberIdx];
   customConfirm('Annuler le paiement de '+m.nom+' ?','Annuler paiement','Oui, annuler').then(ok=>{ if(!ok) return;
     if(excCotisations[excIdx].paiements) delete excCotisations[excIdx].paiements[m.code];
-    dbCall('cancelExcPaiement', {excId:excCotisations[excIdx].id, memberCode:m.code});
+    dbPost('cancelExcPaiement', {excId:excCotisations[excIdx].id, memberCode:m.code});
     openExcDetail(excIdx);
     renderExcAdmin();
   });
@@ -8789,13 +8801,27 @@ function genererBilanAG(){
   // ─────────────────────────────────────
   const cotisRows = [];
   let totalCotis = 0;
+  // Helper — convertir nom de mois ou numéro en nombre 1-12
+  function moisToNum(m){
+    if(!m) return 0;
+    const n = Number(m);
+    if(!isNaN(n) && n>0) return n;
+    // Nom français → numéro
+    const idx = MOIS_FR.indexOf(String(m));
+    if(idx>0) return idx;
+    // Abréviation
+    const idx2 = MOIS_COURT.indexOf(String(m));
+    if(idx2>0) return idx2;
+    return 0;
+  }
+
   // Filtrer selon le mode de période
   const paymentsPeriode = dateDebutStr && dateFinStr
-    ? payments.filter(p=>{ const d=p.date||`${p.annee||annee}-${String(p.mois||1).padStart(2,'0')}-01`; return d>=dateDebutStr&&d<=dateFinStr; })
-    : payments.filter(p=>String(p.annee||'')===String(annee)&&Number(p.mois)>=moisDebut&&Number(p.mois)<=moisFin);
+    ? payments.filter(p=>{ const d=p.date||`${p.annee||annee}-${String(moisToNum(p.mois)||1).padStart(2,'0')}-01`; return d>=dateDebutStr&&d<=dateFinStr; })
+    : payments.filter(p=>String(p.annee||'')===String(annee)&&moisToNum(p.mois)>=moisDebut&&moisToNum(p.mois)<=moisFin);
 
   for(let m=moisDebut; m<=moisFin; m++){
-    const montantMois = paymentsPeriode.filter(p=>Number(p.mois)===m).reduce((s,p)=>s+Number(p.montant||0),0);
+    const montantMois = paymentsPeriode.filter(p=>moisToNum(p.mois)===m).reduce((s,p)=>s+Number(p.montant||0),0);
     if(montantMois>0 || moisDebut===moisFin){
       cotisRows.push([MOIS_FR[m], 'COTISATION MENSUELLE', `<span style="font-family:var(--mono);font-weight:600">${fmt(montantMois)}</span>`]);
       totalCotis+=montantMois;
@@ -9072,8 +9098,10 @@ function exportBilanAGExcel(){
   const cotisData = [];
   cotisData.push(['MOIS','DÉSIGNATION','RECETTES (FCFA)']);
   let totalCotis=0;
+  // Réutiliser moisToNum si disponible, sinon définir localement
+  const _moisToNum = typeof moisToNum === 'function' ? moisToNum : (mv)=>{ const n=Number(mv); if(!isNaN(n)&&n>0)return n; const idx=MOIS_FR.indexOf(String(mv)); return idx>0?idx:0; };
   for(let m=moisDebut;m<=moisFin;m++){
-    const mt=payments.filter(p=>p.annee==annee&&Number(p.mois)===m).reduce((s,p)=>s+Number(p.montant||0),0);
+    const mt=payments.filter(p=>String(p.annee||'')==String(annee)&&_moisToNum(p.mois)===m).reduce((s,p)=>s+Number(p.montant||0),0);
     cotisData.push([MOIS_FR[m],'COTISATION MENSUELLE',mt]);
     totalCotis+=mt;
   }
