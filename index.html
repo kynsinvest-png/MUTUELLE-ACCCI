@@ -9014,148 +9014,20 @@ function genererBilanAG(){
   ];
   const depensesRows = Object.entries(depensesAG).map(([k,v])=>[k, fmt(v)+' FCFA']);
 
-  document.getElementById('bag-section-bilan').innerHTML = `
-    <div class="bag-section-title" style="background:#0F2544">BILAN GÉNÉRAL — RECETTES & DÉPENSES</div>
-    <div class="bag-bilan-grid">
-      <div class="bag-bilan-col" style="border-right:1px solid var(--gray-200)">
-        <div class="bag-bilan-col-title" style="background:#DBEAFE;color:#1E40AF">LES RECETTES</div>
-        ${recettesRows.map(([k,v])=>`<div class="bag-bilan-row"><span>${k}</span><span style="font-family:var(--mono);font-weight:600">${v}</span></div>`).join('')}
-        <div class="bag-total-final">
-          <span>Total général RECETTES</span>
-          <span>${fmt(totalRecettes)} FCFA</span>
-        </div>
-      </div>
-      <div class="bag-bilan-col">
-        <div class="bag-bilan-col-title" style="background:#FEE2E2;color:#991B1B">LES DÉPENSES</div>
-        ${depensesRows.map(([k,v])=>`<div class="bag-bilan-row"><span>${k}</span><span style="font-family:var(--mono);font-weight:600">${v}</span></div>`).join('')}
-        <div class="bag-total-final" style="background:#991B1B">
-          <span>Total général DÉPENSES</span>
-          <span>${fmt(totalDepenses)} FCFA</span>
-        </div>
-      </div>
-    </div>
-    <div class="bag-solde-box ${solde<0?'bag-solde-deficit':''}">
-      <div>
-        <div style="font-size:12px;font-weight:600;color:${solde<0?'#991B1B':'#166534'};margin-bottom:4px">SOLDE DE LA PÉRIODE</div>
-        <div style="font-size:11px;color:var(--gray-500)">Recettes − Dépenses</div>
-      </div>
-      <div style="font-size:28px;font-weight:800;color:${solde<0?'#DC2626':'#16A34A'};font-family:var(--mono)">
-        ${solde>=0?'+':''}${fmt(solde)} FCFA
-      </div>
-    </div>`;
-
-  // Bloc prêts restants (séparé du template principal pour éviter les problèmes de backtick imbriquée)
-  const _pretsEnCours = prets.filter(p=>getPretStatut?.(p)!=='solde');
-  const _resteTotal   = _pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant?.(p)||0),0);
-  const _soldeNet     = solde - _resteTotal;
-  const _dateRef      = dateFin || (annee+'-12-31');
-  const _dateRefFmt   = new Date(_dateRef).toLocaleDateString('fr-FR');
-
-  const _pretDetailHTML = _pretsEnCours.length>0
-    ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #DDD6FE;font-size:11px;color:#6B7280">'
-      + '<div style="font-weight:600;color:#4C1D95;margin-bottom:4px">Détail des prêts en cours :</div>'
-      + _pretsEnCours.map(p=>{
-          const mb=getMemberByCode(p.memberCode);
-          const cap=Number(getPretCapitalRestant?.(p)||0);
-          return '<div style="display:flex;justify-content:space-between;padding:2px 0">'
-            + '<span>'+(mb?(mb.prenom||'')+' '+mb.nom:p.memberCode)+'</span>'
-            + '<span style="font-family:var(--mono);color:#7C3AED">− '+fmt(cap)+' FCFA</span>'
-            + '</div>';
-        }).join('')
-      + '</div>'
-    : '';
-
-  const _bilanSoldeEl = document.getElementById('bag-section-bilan');
-  _bilanSoldeEl.innerHTML += `
-    <div style="margin-top:8px;background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:10px;padding:14px 20px">
-      <div style="font-size:12px;font-weight:700;color:#4C1D95;margin-bottom:10px">🏦 DÉDUCTION DES PRÊTS EN COURS — À la date du ${_dateRefFmt}</div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
-        <span style="color:var(--gray-600)">Solde de la période</span>
-        <span style="font-family:var(--mono);font-weight:600;color:${solde>=0?'#16A34A':'#DC2626'}">${solde>=0?'+':''}${fmt(solde)} FCFA</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
-        <span style="color:#7C3AED">Nombre de prêts en cours</span>
-        <span style="font-weight:700;color:#7C3AED">${_pretsEnCours.length} prêt(s)</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;padding-bottom:10px;border-bottom:1px dashed #C4B5FD">
-        <span style="color:#7C3AED">Capital restant total à rembourser</span>
-        <span style="font-family:var(--mono);font-weight:700;color:#DC2626">− ${fmt(_resteTotal)} FCFA</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div style="font-size:13px;font-weight:700;color:#4C1D95">SOLDE DISPONIBLE NET</div>
-          <div style="font-size:11px;color:var(--gray-500)">Solde de la période − Capital prêts restants</div>
-        </div>
-        <div style="font-size:24px;font-weight:800;font-family:var(--mono);color:${_soldeNet>=0?'#4C1D95':'#DC2626'}">
-          ${_soldeNet>=0?'+':''}${fmt(_soldeNet)} FCFA
-        </div>
-      </div>
-      ${_pretDetailHTML}
-    </div>`;
-
-  // ── Vérification cohérence Comptes & Trésorerie ──
-  const _soldeTreso   = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
-  const _ecart        = _soldeTreso - _soldeNet;
-  const _ecartAbs     = Math.abs(_ecart);
-  const _isOk         = _ecartAbs < 1;   // Tolérance 1 FCFA pour arrondis
-
-  const _coherenceHTML = `
-    <div style="margin-top:8px;background:${_isOk?'#F0FDF4':'#FFFBEB'};border:1.5px solid ${_isOk?'#BBF7D0':'#F59E0B'};border-radius:10px;padding:14px 20px">
-      <div style="font-size:12px;font-weight:700;color:${_isOk?'#166534':'#92400E'};margin-bottom:10px">
-        ${_isOk?'✅':'⚠️'} VÉRIFICATION — COHÉRENCE DES COMPTES
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
-        <span style="color:var(--gray-600)">Solde disponible net (Rapport Bilan)</span>
-        <span style="font-family:var(--mono);font-weight:600;color:#4C1D95">${fmt(_soldeNet)} FCFA</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;padding-bottom:10px;border-bottom:1px dashed ${_isOk?'#BBF7D0':'#FCD34D'}">
-        <span style="color:var(--gray-600)">Solde réel Comptes & Trésorerie (${comptes.filter(c=>c.actif).length} compte(s))</span>
-        <span style="font-family:var(--mono);font-weight:600;color:#1D4ED8">${fmt(_soldeTreso)} FCFA</span>
-      </div>
-      ${_isOk
-        ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#166534">
-            <span style="font-size:18px">✅</span>
-            <span>Comptes équilibrés — Aucun écart détecté</span>
-           </div>`
-        : `<div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-              <div>
-                <div style="font-size:13px;font-weight:700;color:#92400E">ÉCART DÉTECTÉ</div>
-                <div style="font-size:11px;color:#78350F">Différence entre le bilan théorique et les comptes réels</div>
-              </div>
-              <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:${_ecart>0?'#16A34A':'#DC2626'}">
-                ${_ecart>0?'+':''}${fmt(_ecart)} FCFA
-              </div>
-            </div>
-            <div style="background:#FEF3C7;border-radius:6px;padding:8px 12px;font-size:11px;color:#78350F;line-height:1.6">
-              ${_ecart>0
-                ? `📌 Les Comptes & Trésorerie affichent <strong>${fmt(_ecartAbs)} FCFA de plus</strong> que le bilan théorique.<br>
-                   Cause possible : des opérations ont été enregistrées dans les comptes sans être saisies dans les modules (cotisations, dons, dépenses…), ou un ajustement manuel a été effectué.`
-                : `📌 Le Bilan AG affiche <strong>${fmt(_ecartAbs)} FCFA de plus</strong> que les Comptes & Trésorerie.<br>
-                   Cause possible : des cotisations ou recettes ont été saisies <strong>sans sélectionner un compte</strong> lors de l'enregistrement. Vérifiez que chaque opération est bien liée à un compte.`
-              }
-            </div>
-           </div>`
-      }
-      <div style="margin-top:8px;padding-top:8px;border-top:1px solid ${_isOk?'#BBF7D0':'#FCD34D'};font-size:10px;color:#9CA3AF">
-        ${comptes.filter(c=>c.actif).map(cp=>`${cp.nom} : ${fmt(getCompteSolde(cp.id))} FCFA`).join(' &nbsp;·&nbsp; ')}
-      </div>
-    </div>`;
-
-  document.getElementById('bag-section-bilan').innerHTML += _coherenceHTML;
-
 
   // ─────────────────────────────────────
-  // 7. PRÊTS — Tous les prêts (pas filtré par période, données cumulatives)
+  // SECTION BILAN + PRÊTS + VÉRIFICATION
+  // Toutes calculées ici et injectées en UNE SEULE FOIS par div
   // ─────────────────────────────────────
+
+  // Calcul prêts AVANT rendu
   const pretsP           = prets.filter(p=>inP(p.date));
   const pretsAnterieurs  = prets.filter(p=>{
     if(!p.date) return false;
     if(dateDebutStr) return p.date < dateDebutStr;
     return Number(p.date.substring(0,4)) < Number(annee);
   });
-  const pretsEnCours     = prets.filter(p=>getPretStatut?.(p)!=='solde');
-
+  const pretsEnCours     = prets.filter(p=>getPretStatut&&getPretStatut(p)!=='solde');
   const totalAccordePeriode = pretsP.reduce((s,p)=>s+Number(p.montant||0),0);
   const totalAccordeAnt     = pretsAnterieurs.reduce((s,p)=>s+Number(p.montant||0),0);
   const totalAccorde        = totalAccordePeriode + totalAccordeAnt;
@@ -9166,66 +9038,122 @@ function genererBilanAG(){
     return Number(r.date.substring(0,4)) < Number(annee);
   }).reduce((s,r)=>s+Number(r.montant||0),0);
   const totalRembourse      = totalRembPeriode + totalRembAnt;
-  const resteARembourser    = pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant?.(p)||0),0);
+  const resteARembourser    = pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant&&getPretCapitalRestant(p)||0),0);
   const soldeDisponible     = solde - resteARembourser;
 
-  document.getElementById('bag-section-prets').innerHTML = `
-    <div class="bag-section-title" style="background:#4C1D95">SITUATION DES PRÊTS</div>
-    <div style="border:1px solid #DDD6FE;border-top:none;border-radius:0 0 8px 8px;overflow:hidden;background:#fff">
-      <table class="bag-table">
-        <tbody>
-          <tr><td style="background:#F5F3FF;font-weight:600;color:#4C1D95;padding:8px 12px" colspan="3">📊 SYNTHÈSE DES PRÊTS</td></tr>
-          <tr><td style="width:20px"></td><td>Anciens prêts (antérieurs à la période)</td><td style="text-align:right;font-family:var(--mono)">${fmt(totalAccordeAnt)} FCFA</td></tr>
-          <tr style="background:#F8F9FC"><td></td><td>Prêts de la période sélectionnée</td><td style="text-align:right;font-family:var(--mono)">${fmt(totalAccordePeriode)} FCFA</td></tr>
-          <tr class="total-row"><td></td><td>TOTAL DES PRÊTS ACCORDÉS</td><td style="text-align:right;font-family:var(--mono)">${fmt(totalAccorde)} FCFA</td></tr>
-          <tr><td></td><td>Total remboursé</td><td style="text-align:right;font-family:var(--mono);color:#16A34A">${fmt(totalRembourse)} FCFA</td></tr>
-          <tr class="total-row"><td></td><td style="color:#DC2626;font-weight:700">RESTE À REMBOURSER</td><td style="text-align:right;font-family:var(--mono);color:#DC2626;font-weight:700">${fmt(resteARembourser)} FCFA</td></tr>
-          <tr><td style="background:#EFF6FF;font-weight:600;color:#1D4ED8;padding:8px 12px" colspan="3">💰 IMPACT SUR LA TRÉSORERIE</td></tr>
-          <tr><td></td><td>Solde de la période</td><td style="text-align:right;font-family:var(--mono)">${fmt(solde)} FCFA</td></tr>
-          <tr><td></td><td>Total prêts à rembourser (déduction)</td><td style="text-align:right;font-family:var(--mono);color:#DC2626">− ${fmt(resteARembourser)} FCFA</td></tr>
-          <tr class="grand-total"><td colspan="2" style="padding:8px 12px">SOLDE DISPONIBLE NET</td><td style="text-align:right;font-family:var(--mono);font-size:14px;padding:8px 12px">${fmt(soldeDisponible)} FCFA</td></tr>
-        </tbody>
-      </table>
-      ${pretsEnCours.length?`
-      <div style="background:#F5F3FF;padding:8px 16px;font-size:11px;font-weight:700;color:#4C1D95;border-top:1px solid #DDD6FE">
-        📋 ÉTAT DES PRÊTS — MEMBRES AVEC UN PRÊT EN COURS (${pretsEnCours.length})
-      </div>
-      <div style="overflow-x:auto">
-      <table class="bag-table">
-        <thead><tr>
-          <th>DATE DÉBLOCAGE</th><th>NOM ET PRÉNOMS</th><th>CODE</th>
-          <th style="text-align:right">MONTANT ACCORDÉ</th>
-          <th style="text-align:right">REMBOURSÉ</th>
-          <th style="text-align:right">RESTANT DÛ</th>
-          <th>STATUT</th>
-        </tr></thead>
-        <tbody>
-          ${pretsEnCours.map((p,i)=>{
-            const mb=getMemberByCode(p.memberCode);
-            const cap=getPretCapitalRestant?.(p)||0;
-            const remb=remboursements.filter(r=>r.pretId===p.id).reduce((s,r)=>s+Number(r.montant||0),0);
-            const statut=getPretStatut?.(p);
-            return `<tr style="background:${i%2===0?'#fff':'#F5F3FF'}">
-              <td>${new Date(p.date).toLocaleDateString('fr-FR')}</td>
-              <td style="font-weight:600">${mb?(mb.prenom?mb.prenom+' ':'')+mb.nom:'—'}</td>
-              <td style="font-family:var(--mono);font-size:11px">${p.memberCode}</td>
-              <td style="text-align:right;font-family:var(--mono)">${fmt(Number(p.montant))}</td>
-              <td style="text-align:right;font-family:var(--mono);color:#16A34A">${fmt(remb)}</td>
-              <td style="text-align:right;font-family:var(--mono);color:#DC2626;font-weight:700">${fmt(cap)}</td>
-              <td style="font-size:11px">${statut==='retard'?'🔴 EN RETARD':'🟢 EN COURS'}</td>
-            </tr>`;
-          }).join('')}
-          <tr class="grand-total">
-            <td colspan="3" style="padding:8px 12px">TOTAL (${pretsEnCours.length} prêt(s))</td>
-            <td style="text-align:right;font-family:var(--mono);padding:8px 12px">${fmt(totalAccorde)}</td>
-            <td style="text-align:right;font-family:var(--mono);padding:8px 12px;color:#86EFAC">${fmt(totalRembourse)}</td>
-            <td style="text-align:right;font-family:var(--mono);padding:8px 12px;color:#FCA5A5">${fmt(resteARembourser)}</td>
-            <td></td>
-          </tr>
-        </tbody>
-      </table></div>`
-      :'<div class="bag-empty">✅ Aucun prêt en cours sur cette période</div>'}
-    </div>`;
+  // Vérification cohérence comptes
+  const _soldeTreso = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
+  const _soldeNet   = soldeDisponible;
+  const _ecart      = _soldeTreso - _soldeNet;
+  const _ecartAbs   = Math.abs(_ecart);
+  const _isOk       = _ecartAbs < 1;
+  const _dateRef    = dateFinStr || (annee+'-12-31');
+  const _dateRefFmt = _dateRef ? new Date(_dateRef).toLocaleDateString('fr-FR') : String(annee);
+
+  // --- 1. BILAN GÉNÉRAL ---
+  const elBilan = document.getElementById('bag-section-bilan');
+  let htmlBilan = '<div class="bag-section-title" style="background:#0F2544">BILAN GÉNÉRAL — RECETTES & DÉPENSES</div>';
+  htmlBilan += '<div class="bag-bilan-grid">';
+  htmlBilan += '<div class="bag-bilan-col" style="border-right:1px solid var(--gray-200)">';
+  htmlBilan += '<div class="bag-bilan-col-title" style="background:#DBEAFE;color:#1E40AF">LES RECETTES</div>';
+  recettesRows.forEach(function(r){ htmlBilan += '<div class="bag-bilan-row"><span>'+r[0]+'</span><span style="font-family:var(--mono);font-weight:600">'+r[1]+'</span></div>'; });
+  htmlBilan += '<div class="bag-total-final"><span>Total général RECETTES</span><span>'+fmt(totalRecettes)+' FCFA</span></div>';
+  htmlBilan += '</div>';
+  htmlBilan += '<div class="bag-bilan-col">';
+  htmlBilan += '<div class="bag-bilan-col-title" style="background:#FEE2E2;color:#991B1B">LES DÉPENSES</div>';
+  depensesRows.forEach(function(r){ htmlBilan += '<div class="bag-bilan-row"><span>'+r[0]+'</span><span style="font-family:var(--mono);font-weight:600">'+r[1]+'</span></div>'; });
+  htmlBilan += '<div class="bag-total-final" style="background:#991B1B"><span>Total général DÉPENSES</span><span>'+fmt(totalDepenses)+' FCFA</span></div>';
+  htmlBilan += '</div>';
+  htmlBilan += '</div>';
+  // Solde de la période
+  htmlBilan += '<div class="bag-solde-box '+(solde<0?'bag-solde-deficit':'')+'" style="margin:8px 0">';
+  htmlBilan += '<div><div style="font-size:12px;font-weight:600;color:'+(solde<0?'#991B1B':'#166534')+';margin-bottom:4px">SOLDE DE LA PÉRIODE</div>';
+  htmlBilan += '<div style="font-size:11px;color:var(--gray-500)">Recettes − Dépenses</div></div>';
+  htmlBilan += '<div style="font-size:28px;font-weight:800;color:'+(solde<0?'#DC2626':'#16A34A')+';font-family:var(--mono)">'+(solde>=0?'+':'')+fmt(solde)+' FCFA</div>';
+  htmlBilan += '</div>';
+  // Déduction prêts + solde disponible net
+  htmlBilan += '<div style="margin-top:8px;background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:10px;padding:14px 20px">';
+  htmlBilan += '<div style="font-size:12px;font-weight:700;color:#4C1D95;margin-bottom:10px">🏦 DÉDUCTION DES PRÊTS EN COURS — À la date du '+_dateRefFmt+'</div>';
+  htmlBilan += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px"><span style="color:var(--gray-600)">Solde de la période</span><span style="font-family:var(--mono);font-weight:600;color:'+(solde>=0?'#16A34A':'#DC2626')+'">'+(solde>=0?'+':'')+fmt(solde)+' FCFA</span></div>';
+  htmlBilan += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px"><span style="color:#7C3AED">Prêts en cours ('+pretsEnCours.length+')</span><span style="font-weight:700;color:#7C3AED">'+pretsEnCours.length+' prêt(s)</span></div>';
+  htmlBilan += '<div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;padding-bottom:10px;border-bottom:1px dashed #C4B5FD"><span style="color:#7C3AED">Capital restant total à rembourser</span><span style="font-family:var(--mono);font-weight:700;color:#DC2626">− '+fmt(resteARembourser)+' FCFA</span></div>';
+  htmlBilan += '<div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:13px;font-weight:700;color:#4C1D95">SOLDE DISPONIBLE NET</div><div style="font-size:11px;color:var(--gray-500)">Solde − Prêts restants</div></div>';
+  htmlBilan += '<div style="font-size:24px;font-weight:800;font-family:var(--mono);color:'+(soldeDisponible>=0?'#4C1D95':'#DC2626')+'">'+(soldeDisponible>=0?'+':'')+fmt(soldeDisponible)+' FCFA</div></div>';
+  // Détail par prêt
+  if(pretsEnCours.length > 0){
+    htmlBilan += '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #DDD6FE;font-size:11px;color:#6B7280"><div style="font-weight:600;color:#4C1D95;margin-bottom:4px">Détail :</div>';
+    pretsEnCours.forEach(function(p){
+      var mb = getMemberByCode(p.memberCode);
+      var cap = Number(getPretCapitalRestant&&getPretCapitalRestant(p)||0);
+      htmlBilan += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>'+(mb?(mb.prenom?mb.prenom+' ':'')+mb.nom:p.memberCode)+'</span><span style="font-family:var(--mono);color:#7C3AED">− '+fmt(cap)+' FCFA</span></div>';
+    });
+    htmlBilan += '</div>';
+  }
+  htmlBilan += '</div>';
+  // Vérification cohérence
+  htmlBilan += '<div style="margin-top:8px;background:'+(_isOk?'#F0FDF4':'#FFFBEB')+';border:1.5px solid '+(_isOk?'#BBF7D0':'#F59E0B')+';border-radius:10px;padding:14px 20px">';
+  htmlBilan += '<div style="font-size:12px;font-weight:700;color:'+(_isOk?'#166534':'#92400E')+';margin-bottom:10px">'+(_isOk?'✅':'⚠️')+' VÉRIFICATION — COHÉRENCE DES COMPTES</div>';
+  htmlBilan += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px"><span style="color:var(--gray-600)">Solde disponible net (Rapport Bilan)</span><span style="font-family:var(--mono);font-weight:600;color:#4C1D95">'+fmt(_soldeNet)+' FCFA</span></div>';
+  htmlBilan += '<div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;padding-bottom:10px;border-bottom:1px dashed '+(_isOk?'#BBF7D0':'#FCD34D')+'"><span style="color:var(--gray-600)">Solde réel Comptes & Trésorerie ('+comptes.filter(function(c){return c.actif;}).length+' compte(s))</span><span style="font-family:var(--mono);font-weight:600;color:#1D4ED8">'+fmt(_soldeTreso)+' FCFA</span></div>';
+  if(_isOk){
+    htmlBilan += '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#166534"><span>✅</span><span>Comptes équilibrés — Aucun écart détecté</span></div>';
+  } else {
+    htmlBilan += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><div style="font-size:13px;font-weight:700;color:#92400E">ÉCART DÉTECTÉ</div><div style="font-size:11px;color:#78350F">Différence entre le bilan et les comptes</div></div>';
+    htmlBilan += '<div style="font-size:20px;font-weight:800;font-family:var(--mono);color:'+(_ecart>0?'#16A34A':'#DC2626')+'">'+(_ecart>0?'+':'')+fmt(_ecart)+' FCFA</div></div>';
+    htmlBilan += '<div style="background:#FEF3C7;border-radius:6px;padding:8px 12px;font-size:11px;color:#78350F">'+(_ecart>0?'📌 Les Comptes affichent '+fmt(_ecartAbs)+' FCFA de plus que le bilan.':'📌 Le Bilan affiche '+fmt(_ecartAbs)+' FCFA de plus. Vérifiez que chaque opération est bien liée à un compte.')+'</div>';
+  }
+  htmlBilan += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid '+(_isOk?'#BBF7D0':'#FCD34D')+';font-size:10px;color:#9CA3AF">';
+  htmlBilan += comptes.filter(function(cp){return cp.actif;}).map(function(cp){return cp.nom+' : '+fmt(getCompteSolde(cp.id))+' FCFA';}).join(' &nbsp;·&nbsp; ');
+  htmlBilan += '</div></div>';
+  elBilan.innerHTML = htmlBilan;
+
+  // --- 2. SITUATION DES PRÊTS ---
+  const elPrets = document.getElementById('bag-section-prets');
+  let htmlPrets = '<div class="bag-section-title" style="background:#4C1D95">SITUATION DES PRÊTS</div>';
+  htmlPrets += '<div style="border:1px solid #DDD6FE;border-top:none;border-radius:0 0 8px 8px;overflow:hidden;background:#fff">';
+  htmlPrets += '<table class="bag-table"><tbody>';
+  htmlPrets += '<tr><td style="background:#F5F3FF;font-weight:600;color:#4C1D95;padding:8px 12px" colspan="3">📊 SYNTHÈSE DES PRÊTS</td></tr>';
+  htmlPrets += '<tr><td style="width:20px"></td><td>Anciens prêts (antérieurs à la période)</td><td style="text-align:right;font-family:var(--mono)">'+fmt(totalAccordeAnt)+' FCFA</td></tr>';
+  htmlPrets += '<tr style="background:#F8F9FC"><td></td><td>Prêts de la période sélectionnée</td><td style="text-align:right;font-family:var(--mono)">'+fmt(totalAccordePeriode)+' FCFA</td></tr>';
+  htmlPrets += '<tr class="total-row"><td></td><td>TOTAL DES PRÊTS ACCORDÉS</td><td style="text-align:right;font-family:var(--mono)">'+fmt(totalAccorde)+' FCFA</td></tr>';
+  htmlPrets += '<tr><td></td><td>Total remboursé</td><td style="text-align:right;font-family:var(--mono);color:#16A34A">'+fmt(totalRembourse)+' FCFA</td></tr>';
+  htmlPrets += '<tr class="total-row"><td></td><td style="color:#DC2626;font-weight:700">RESTE À REMBOURSER</td><td style="text-align:right;font-family:var(--mono);color:#DC2626;font-weight:700">'+fmt(resteARembourser)+' FCFA</td></tr>';
+  htmlPrets += '<tr><td style="background:#EFF6FF;font-weight:600;color:#1D4ED8;padding:8px 12px" colspan="3">💰 IMPACT SUR LA TRÉSORERIE</td></tr>';
+  htmlPrets += '<tr><td></td><td>Solde de la période</td><td style="text-align:right;font-family:var(--mono)">'+fmt(solde)+' FCFA</td></tr>';
+  htmlPrets += '<tr><td></td><td>Total prêts à rembourser (déduction)</td><td style="text-align:right;font-family:var(--mono);color:#DC2626">− '+fmt(resteARembourser)+' FCFA</td></tr>';
+  htmlPrets += '<tr class="grand-total"><td colspan="2" style="padding:8px 12px">SOLDE DISPONIBLE NET</td><td style="text-align:right;font-family:var(--mono);font-size:14px;padding:8px 12px">'+fmt(soldeDisponible)+' FCFA</td></tr>';
+  htmlPrets += '</tbody></table>';
+  if(pretsEnCours.length > 0){
+    htmlPrets += '<div style="background:#F5F3FF;padding:8px 16px;font-size:11px;font-weight:700;color:#4C1D95;border-top:1px solid #DDD6FE">📋 ÉTAT DES PRÊTS — MEMBRES AVEC UN PRÊT EN COURS ('+pretsEnCours.length+')</div>';
+    htmlPrets += '<div style="overflow-x:auto"><table class="bag-table"><thead><tr>';
+    htmlPrets += '<th>DATE DÉBLOCAGE</th><th>NOM ET PRÉNOMS</th><th>CODE</th><th style="text-align:right">MONTANT ACCORDÉ</th><th style="text-align:right">REMBOURSÉ</th><th style="text-align:right">RESTANT DÛ</th><th>STATUT</th>';
+    htmlPrets += '</tr></thead><tbody>';
+    pretsEnCours.forEach(function(p, i){
+      var mb = getMemberByCode(p.memberCode);
+      var cap = Number(getPretCapitalRestant&&getPretCapitalRestant(p)||0);
+      var remb = remboursements.filter(function(r){return r.pretId===p.id;}).reduce(function(s,r){return s+Number(r.montant||0);},0);
+      var statut = getPretStatut&&getPretStatut(p);
+      htmlPrets += '<tr style="background:'+(i%2===0?'#fff':'#F5F3FF')+'">';
+      htmlPrets += '<td>'+(p.date?new Date(p.date).toLocaleDateString('fr-FR'):'—')+'</td>';
+      htmlPrets += '<td style="font-weight:600">'+(mb?(mb.prenom?mb.prenom+' ':'')+mb.nom:'—')+'</td>';
+      htmlPrets += '<td style="font-family:var(--mono);font-size:11px">'+p.memberCode+'</td>';
+      htmlPrets += '<td style="text-align:right;font-family:var(--mono)">'+fmt(Number(p.montant||0))+'</td>';
+      htmlPrets += '<td style="text-align:right;font-family:var(--mono);color:#16A34A">'+fmt(remb)+'</td>';
+      htmlPrets += '<td style="text-align:right;font-family:var(--mono);color:#DC2626;font-weight:700">'+fmt(cap)+'</td>';
+      htmlPrets += '<td style="font-size:11px">'+(statut==='retard'?'🔴 EN RETARD':'🟢 EN COURS')+'</td>';
+      htmlPrets += '</tr>';
+    });
+    htmlPrets += '<tr class="grand-total"><td colspan="3" style="padding:8px 12px">TOTAL ('+pretsEnCours.length+' prêt(s))</td>';
+    htmlPrets += '<td style="text-align:right;font-family:var(--mono);padding:8px 12px">'+fmt(totalAccorde)+'</td>';
+    htmlPrets += '<td style="text-align:right;font-family:var(--mono);padding:8px 12px;color:#86EFAC">'+fmt(totalRembourse)+'</td>';
+    htmlPrets += '<td style="text-align:right;font-family:var(--mono);padding:8px 12px;color:#FCA5A5">'+fmt(resteARembourser)+'</td>';
+    htmlPrets += '<td></td></tr>';
+    htmlPrets += '</tbody></table></div>';
+  } else {
+    htmlPrets += '<div class="bag-empty">✅ Aucun prêt en cours</div>';
+  }
+  htmlPrets += '</div>';
+  elPrets.innerHTML = htmlPrets;
 
   _showDocToast('✅ Bilan AG généré pour : '+label);
 }
