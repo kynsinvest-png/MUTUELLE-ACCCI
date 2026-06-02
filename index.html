@@ -9026,16 +9026,31 @@ function genererBilanAG(){
       <div style="font-size:28px;font-weight:800;color:${solde<0?'#DC2626':'#16A34A'};font-family:var(--mono)">
         ${solde>=0?'+':''}${fmt(solde)} FCFA
       </div>
-    </div>
+    </div>`;
 
-    <!-- Déduction prêts restants -->
-    ${(()=>{
-      const _pretsEnCours = prets.filter(p=>getPretStatut?.(p)!=='solde');
-      const _resteTotal = _pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant?.(p)||0),0);
-      const _soldeNet = solde - _resteTotal;
-      const _dateRef = dateFin || (annee+'-12-31');
-      const _dateRefFmt = new Date(_dateRef).toLocaleDateString('fr-FR');
-      return `
+  // Bloc prêts restants (séparé du template principal pour éviter les problèmes de backtick imbriquée)
+  const _pretsEnCours = prets.filter(p=>getPretStatut?.(p)!=='solde');
+  const _resteTotal   = _pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant?.(p)||0),0);
+  const _soldeNet     = solde - _resteTotal;
+  const _dateRef      = dateFin || (annee+'-12-31');
+  const _dateRefFmt   = new Date(_dateRef).toLocaleDateString('fr-FR');
+
+  const _pretDetailHTML = _pretsEnCours.length>0
+    ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #DDD6FE;font-size:11px;color:#6B7280">'
+      + '<div style="font-weight:600;color:#4C1D95;margin-bottom:4px">Détail des prêts en cours :</div>'
+      + _pretsEnCours.map(p=>{
+          const mb=getMemberByCode(p.memberCode);
+          const cap=Number(getPretCapitalRestant?.(p)||0);
+          return '<div style="display:flex;justify-content:space-between;padding:2px 0">'
+            + '<span>'+(mb?(mb.prenom||'')+' '+mb.nom:p.memberCode)+'</span>'
+            + '<span style="font-family:var(--mono);color:#7C3AED">− '+fmt(cap)+' FCFA</span>'
+            + '</div>';
+        }).join('')
+      + '</div>'
+    : '';
+
+  const _bilanSoldeEl = document.getElementById('bag-section-bilan');
+  _bilanSoldeEl.innerHTML += `
     <div style="margin-top:8px;background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:10px;padding:14px 20px">
       <div style="font-size:12px;font-weight:700;color:#4C1D95;margin-bottom:10px">🏦 DÉDUCTION DES PRÊTS EN COURS — À la date du ${_dateRefFmt}</div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
@@ -9059,19 +9074,8 @@ function genererBilanAG(){
           ${_soldeNet>=0?'+':''}${fmt(_soldeNet)} FCFA
         </div>
       </div>
-      ${_pretsEnCours.length>0?`<div style="margin-top:10px;padding-top:8px;border-top:1px solid #DDD6FE;font-size:11px;color:#6B7280">
-        <div style="font-weight:600;color:#4C1D95;margin-bottom:4px">Détail des prêts en cours :</div>
-        ${_pretsEnCours.map(p=>{
-          const mb=getMemberByCode(p.memberCode);
-          const cap=Number(getPretCapitalRestant?.(p)||0);
-          return `<div style="display:flex;justify-content:space-between;padding:2px 0">
-            <span>${mb?(mb.prenom||'')+' '+mb.nom:p.memberCode}</span>
-            <span style="font-family:var(--mono);color:#7C3AED">− ${fmt(cap)} FCFA</span>
-          </div>`;
-        }).join('')}
-      </div>`:''}
+      ${_pretDetailHTML}
     </div>`;
-    })()}`;
 
 
   // ─────────────────────────────────────
