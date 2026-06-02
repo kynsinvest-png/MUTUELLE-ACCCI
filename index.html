@@ -8975,6 +8975,17 @@ function genererBilanAG(){
   // ─────────────────────────────────────
   // 6. BILAN GÉNÉRAL
   // ─────────────────────────────────────
+
+  // Solde excédentaire exercice précédent — déclaré AVANT d'être utilisé dans recettes
+  const _soldePrecedentAG = calculerSoldeAnnee
+    ? (calculerSoldeAnnee(String(parseInt(annee)-1)) > 0
+        ? calculerSoldeAnnee(String(parseInt(annee)-1))
+        : (Number(branding.soldePrecedent)||0))
+    : (Number(branding.soldePrecedent)||0);
+
+  // Solde Comptes & Trésorerie — pour la vérification de cohérence uniquement (hors recettes)
+  const _soldeTresorerie = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
+
   const recettes = {
     soldePrecedent: _soldePrecedentAG,
     cotisations:    totalCotis,
@@ -8983,6 +8994,8 @@ function genererBilanAG(){
     dons:           totalDons,
   };
   const totalRecettes = Object.values(recettes).reduce((s,v)=>s+v,0);
+
+  const depensesAG = {};
   assistTypes.forEach(({key,label})=>{
     depensesAG[label] = assistances.filter(a=>a.type===key&&inP(a.dateVerse||a.dateEvent)).reduce((s,a)=>s+Number(a.montant||0),0);
   });
@@ -8991,16 +9004,6 @@ function genererBilanAG(){
   depensesAG['LIÉE À UNE ACTIVITÉ'] = depenses.filter(d=>d.type==='activite'&&inP(d.date)).reduce((s,d)=>s+Number(d.montant||0),0);
   const totalDepenses = Object.values(depensesAG).reduce((s,v)=>s+v,0);
   const solde = totalRecettes - totalDepenses;
-
-  // Solde excédentaire exercice précédent
-  const _soldePrecedentAG = calculerSoldeAnnee
-    ? (calculerSoldeAnnee(String(parseInt(annee)-1)) > 0
-        ? calculerSoldeAnnee(String(parseInt(annee)-1))
-        : (Number(branding.soldePrecedent)||0))
-    : (Number(branding.soldePrecedent)||0);
-
-  // Solde Comptes & Trésorerie — uniquement pour la vérification de cohérence (hors recettes)
-  const _soldeTresorerie = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
 
   const recettesRows = [
     ['Solde excédentaire exercice précédent', fmt(_soldePrecedentAG)+' FCFA'],
@@ -9399,25 +9402,6 @@ function exportBilanAGExcel(){
   .hdr{background:#0F2544;color:#fff;font-weight:bold}
   .tot{background:#374151;color:#fff;font-weight:bold}
   .num{mso-number-format:"# ##0";text-align:right}
-
-.projet-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:18px;margin-bottom:12px;box-shadow:var(--shadow);border-left:4px solid var(--navy)}
-.projet-filter-btn{background:var(--white);border:1.5px solid var(--gray-200);color:var(--gray-600)}
-.projet-filter-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
-.proj-mb-filter{background:var(--white);border:1.5px solid var(--gray-200);color:var(--gray-600)}
-.proj-mb-filter.active{background:var(--navy);color:#fff;border-color:var(--navy)}
-.proj-progress-bar{height:10px;border-radius:99px;background:#E5E8EF;overflow:hidden;margin:8px 0}
-.proj-progress-fill{height:100%;border-radius:99px;transition:width .4s ease}
-.proj-mb-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--gray-100);font-size:13px}
-.proj-mb-row:last-child{border-bottom:none}
-
-.compte-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
-.compte-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px}
-.compte-solde{font-size:26px;font-weight:800;margin:8px 0 4px}
-.tx-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--gray-100);font-size:13px}
-.tx-row:last-child{border-bottom:none}
-.tx-entree{color:#16A34A;font-weight:700}
-.tx-sortie{color:#DC2626;font-weight:700}
-.tx-virement{color:#1D4ED8;font-weight:700}
 </style></head><body>`;
 
   sheets.forEach((s,si)=>{
@@ -9456,64 +9440,62 @@ function exportBilanAGPDF(){
     _showDocToast('⚠️ Générez le bilan avant d\'exporter.');
     return;
   }
-  const {label} = getBagPeriode();
+  const periodeObj = getBagPeriode();
+  if(!periodeObj) return;
+  const {label} = periodeObj;
   const mutuelle = branding.nom||'MUTUELLE';
   const now = new Date().toLocaleDateString('fr-FR');
+
+  // Construire le HTML proprement — on copie le contenu sans CSS parasites
+  const contentClone = content.cloneNode(true);
+  // Supprimer les sections vides pour alléger le PDF
+  contentClone.querySelectorAll('.section-ag').forEach(sec=>{
+    const empty = sec.querySelector('.bag-empty');
+    if(empty && !sec.querySelector('table')) sec.style.display='none';
+  });
+
   const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <title>${mutuelle} — Bilan AG — ${label}</title>
 <style>
 @page{margin:14mm 12mm;size:A4}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;font-size:11px;color:#111}
-${document.querySelector('style') ? '' : ''}
-.bag-section-title{background:#0F2544;color:#fff;padding:7px 14px;font-size:12px;font-weight:700;display:flex;justify-content:space-between}
+body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
+.bag-section-title{background:#0F2544;color:#fff;padding:7px 14px;font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;border-radius:6px 6px 0 0}
 .bag-table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:12px}
 .bag-table th{background:#374151;color:#fff;padding:5px 10px;text-align:left;font-size:9px;font-weight:700}
-.bag-table td{padding:5px 10px;border-bottom:1px solid #F0F2F7}
-.total-row td{background:#F3F4F6;font-weight:700}
-.grand-total td{background:#1F2937;color:#fff;font-weight:800}
-.bag-bilan-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid #ddd;margin-bottom:12px}
-.bag-bilan-col-title{padding:6px;font-size:11px;font-weight:700;text-align:center}
-.bag-bilan-row{display:flex;justify-content:space-between;padding:5px 10px;border-bottom:1px solid #f0f0f0;font-size:10px}
-.bag-total-final{padding:6px 10px;font-weight:800;font-size:11px;display:flex;justify-content:space-between;color:#fff}
-.bag-empty{padding:10px;color:#9CA3AF;font-style:italic;font-size:10px}
-.bag-solde-box{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:2px solid #16A34A;border-radius:6px;margin:10px 0}
-.section-ag{margin-bottom:14px}
-.btn{position:fixed;top:12px;right:12px;background:#0F2544;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:12px;font-weight:600;cursor:pointer}
+.bag-table td{padding:5px 10px;border-bottom:1px solid #F0F2F7;vertical-align:top}
+.total-row td{background:#F3F4F6!important;font-weight:700}
+.grand-total td{background:#1F2937!important;color:#fff;font-weight:800}
+.bag-bilan-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid #ddd;margin-bottom:12px;border-radius:0 0 6px 6px}
+.bag-bilan-col{padding:0}
+.bag-bilan-col-title{padding:7px 12px;font-size:11px;font-weight:700;text-align:center}
+.bag-bilan-row{display:flex;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #F0F0F0;font-size:11px}
+.bag-total-final{padding:7px 12px;font-weight:800;font-size:11px;display:flex;justify-content:space-between;color:#fff;background:#0F2544}
+.bag-empty{padding:10px 14px;color:#9CA3AF;font-style:italic;font-size:10px;border:1px solid #F0F2F7;border-top:none;border-radius:0 0 6px 6px}
+.bag-solde-box{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:2px solid #16A34A;border-radius:6px;margin:8px 0;background:#F0FDF4}
+.bag-solde-deficit{border-color:#DC2626!important;background:#FEF2F2!important}
+.section-ag{margin-bottom:12px;page-break-inside:avoid}
+.stat-card,.stat-card.blue,.stat-card.green,.stat-card.orange,.stat-card.purple{display:none}
+.btn{position:fixed;top:12px;right:12px;background:#0F2544;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:12px;font-weight:600;cursor:pointer;z-index:9999}
 @media print{.btn{display:none}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-
-.projet-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:18px;margin-bottom:12px;box-shadow:var(--shadow);border-left:4px solid var(--navy)}
-.projet-filter-btn{background:var(--white);border:1.5px solid var(--gray-200);color:var(--gray-600)}
-.projet-filter-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
-.proj-mb-filter{background:var(--white);border:1.5px solid var(--gray-200);color:var(--gray-600)}
-.proj-mb-filter.active{background:var(--navy);color:#fff;border-color:var(--navy)}
-.proj-progress-bar{height:10px;border-radius:99px;background:#E5E8EF;overflow:hidden;margin:8px 0}
-.proj-progress-fill{height:100%;border-radius:99px;transition:width .4s ease}
-.proj-mb-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--gray-100);font-size:13px}
-.proj-mb-row:last-child{border-bottom:none}
-
-.compte-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
-.compte-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px}
-.compte-solde{font-size:26px;font-weight:800;margin:8px 0 4px}
-.tx-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--gray-100);font-size:13px}
-.tx-row:last-child{border-bottom:none}
-.tx-entree{color:#16A34A;font-weight:700}
-.tx-sortie{color:#DC2626;font-weight:700}
-.tx-virement{color:#1D4ED8;font-weight:700}
 </style></head><body>
 <button class="btn" onclick="window.print()">🖨️ Imprimer / PDF</button>
 <div style="text-align:center;background:#0F2544;color:#fff;padding:16px;margin-bottom:14px;border-radius:8px">
-  <div style="font-size:20px;font-weight:800">${document.getElementById('bag-titre-mutuelle').textContent}</div>
-  <div style="font-size:14px;margin-top:4px;opacity:.85">${document.getElementById('bag-titre-periode').textContent}</div>
-  <div style="font-size:11px;margin-top:4px;opacity:.6">Rapport Bilan AG — Édité le ${now}</div>
+  <div style="font-size:20px;font-weight:800">${mutuelle}</div>
+  <div style="font-size:14px;margin-top:4px;opacity:.85">Rapport Bilan AG — Période : ${label}</div>
+  <div style="font-size:11px;margin-top:4px;opacity:.6">Édité le ${now}</div>
 </div>
-${content.innerHTML}
+${contentClone.innerHTML}
 </body></html>`;
-  const win=window.open('','_blank','width=900,height=800');
-  if(win){win.document.write(html);win.document.close();}
-  else{
+
+  const win=window.open('','_blank','width=1000,height=900');
+  if(win){
+    win.document.write(html);
+    win.document.close();
+  } else {
     const b=new Blob([html],{type:'text/html'});
-    const a=document.createElement('a');a.href=URL.createObjectURL(b);
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(b);
     a.download=`${mutuelle.replace(/\s+/g,'_')}_bilan_AG_${label.replace(/[^a-z0-9]/gi,'_')}.html`;
     document.body.appendChild(a);a.click();document.body.removeChild(a);
   }
