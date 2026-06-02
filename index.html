@@ -5308,14 +5308,6 @@ function renderAdminDashboard(){
   // ── Prêts en cours (capital restant) ──
   const _pretsEnCours  = prets.filter(p=>getPretStatut&&getPretStatut(p)!=='solde');
   const _totalPretRest = _pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant?.(p)||0),0);
-  const _totalCollecteAnne = totalCollecte; // cotisations
-  const _totalDepAnne  = depenses.filter(d=>String(d.annee||'')===String(annee)||String(d.date||'').startsWith(String(annee))).reduce((s,d)=>s+Number(d.montant||0),0);
-  const _totalAssistAnne = assistances.filter(a=>{ const d=a.dateVerse||a.dateEvent||''; return String(d).startsWith(String(annee)); }).reduce((s,a)=>s+Number(a.montant||0),0);
-  const _soldeBrut = totalCollecte
-    + excCotisations.reduce((s,e)=>s+Object.values(e.paiements||{}).reduce((ss,v)=>ss+Number(v||0),0),0)
-    + dons.filter(d=>String(d.date||'').startsWith(String(annee))&&d.type==='especes').reduce((s,d)=>s+Number(d.montant||0),0)
-    - _totalDepAnne - _totalAssistAnne;
-  const _soldeNet = _soldeBrut - _totalPretRest;
 
   document.getElementById('admin-stats').innerHTML=`
     <div class="stat-card blue"><div class="stat-label">Membres actifs</div><div class="stat-value">${actifs.length}</div><div class="stat-sub">${inactifs.length} inactif(s)</div></div>
@@ -5324,8 +5316,7 @@ function renderAdminDashboard(){
     <div class="stat-card ${totalRestantMoisActuel===0?'green':''}"><div class="stat-label">Restant dû au mois de ${moisCurAdmin}</div><div class="stat-value" style="color:${totalRestantMoisActuel===0?'var(--green)':'#DC2626'}">${(totalRestantMoisActuel/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalRestantMoisActuel)}</div></div>
     <div class="stat-card ${nbAjourMoisActuel===actifs.length?'green':''}"><div class="stat-label">À jour au mois de ${moisCurAdmin}</div><div class="stat-value">${nbAjourMoisActuel}/${actifs.length}</div><div class="stat-sub">${actifs.length-nbAjourMoisActuel} en retard</div></div>
     <div class="stat-card purple"><div class="stat-label">Nouvelles adhésions ${annee}</div><div class="stat-value">${nouvellesAdhesions.length}</div><div class="stat-sub">${nouvellesAdhesions.length>0?'Dernier : '+new Date(nouvellesAdhesions.sort((a,b)=>new Date(b.date)-new Date(a.date))[0].date).toLocaleDateString('fr-FR'):'Aucune cette année'}</div></div>
-    <div class="stat-card" style="background:#F5F3FF;border:1px solid #DDD6FE"><div class="stat-label" style="color:#7C3AED">Prêts restants à rembourser</div><div class="stat-value" style="color:#7C3AED;font-size:18px">${((_totalPretRest)/1000).toFixed(0)}K</div><div class="stat-sub" style="color:#7C3AED">${_pretsEnCours.length} prêt(s) en cours · ${fmt(_totalPretRest)} FCFA</div></div>
-    <div class="stat-card" style="background:${_soldeNet>=0?'#F0FDF4':'#FEF2F2'};border:1px solid ${_soldeNet>=0?'#BBF7D0':'#FECACA'}"><div class="stat-label" style="color:${_soldeNet>=0?'#166534':'#991B1B'}">Solde disponible net ${annee}</div><div class="stat-value" style="color:${_soldeNet>=0?'#16A34A':'#DC2626'};font-size:18px">${(_soldeNet/1000).toFixed(0)}K</div><div class="stat-sub" style="color:${_soldeNet>=0?'#166534':'#991B1B'}">Recettes − Dép. − Prêts restants</div></div>`;
+    <div class="stat-card" style="background:#F5F3FF;border:1px solid #DDD6FE"><div class="stat-label" style="color:#7C3AED">Prêts restants à rembourser</div><div class="stat-value" style="color:#7C3AED;font-size:18px">${((_totalPretRest)/1000).toFixed(0)}K</div><div class="stat-sub" style="color:#7C3AED">${_pretsEnCours.length} prêt(s) en cours · ${fmt(_totalPretRest)} FCFA</div></div>`;
 
   const prog = document.getElementById('month-progress');
   prog.innerHTML = moisActifsAnnee.map((mn)=>{
@@ -8898,18 +8889,31 @@ function genererBilanAG(){
   // 3b. DROITS D'ADHÉSION
   // ─────────────────────────────────────
   // Les droits d'adhésion sont liés aux membres selon leur date d'adhésion
+  // Droits d'adhésion — tous les membres ayant payé (recette unique, pas filtrée par période)
   const membresAvecDroit = members.filter(m=>{
-    if(!m.droitPaye || !m.droitMontant) return false;
-    if(!dateDebutStr) return String(m.anneeAdhesion||m.date?.substring(0,4)||annee)===String(annee);
-    const dateAdh = m.date||'';
-    return dateAdh>=dateDebutStr && dateAdh<=dateFinStr;
+    if(!m.droitPaye || !Number(m.droitMontant)) return false;
+    // Filtrer par date d'adhésion si la période est renseignée
+    if(dateDebutStr && dateFinStr){
+      const dateAdh = m.date||'';
+      return dateAdh>=dateDebutStr && dateAdh<=dateFinStr;
+    }
+    // Sans filtre dates : filtrer par année d'adhésion
+    // Si aucune date → inclure quand même
+    if(!m.date) return true;
+    const anneeAdh = m.date.substring(0,4);
+    return String(anneeAdh)===String(annee);
   });
-  const totalDroits = membresAvecDroit.reduce((s,m)=>s+Number(m.droitMontant||0),0);
+  // Si aucun résultat avec filtre année → prendre tous (données sans date)
+  const membresAvecDroitFinal = membresAvecDroit.length > 0
+    ? membresAvecDroit
+    : members.filter(m=>m.droitPaye && Number(m.droitMontant));
+
+  const totalDroits = membresAvecDroitFinal.reduce((s,m)=>s+Number(m.droitMontant||0),0);
   bagTableSection('bag-section-adhesion','DROITS D\'ADHÉSION','#1E40AF',
     ['N°','NOM ET PRÉNOM','CODE','DATE D\'ADHÉSION','MONTANT DROIT (FCFA)'],
-    membresAvecDroit.map(m=>[
+    membresAvecDroitFinal.map(m=>[
       m.num||'—',
-      m.nom||(m.prenom?m.prenom+' ':'')||(m.nom||'—'),
+      ((m.prenom?m.prenom+' ':'')+m.nom).trim()||'—',
       m.code||'—',
       m.date?new Date(m.date).toLocaleDateString('fr-FR'):'—',
       `<span style="font-family:var(--mono)">${fmt(Number(m.droitMontant||0))}</span>`
@@ -8972,14 +8976,13 @@ function genererBilanAG(){
   // 6. BILAN GÉNÉRAL
   // ─────────────────────────────────────
   const recettes = {
+    soldePrecedent: _soldePrecedentAG,
     cotisations:    totalCotis,
     cotisationsExc: totalExc,
-    droitsAdhesion: totalDroits,
+    droitsAdhesion: membresAvecDroitFinal.reduce((s,m)=>s+Number(m.droitMontant||0),0),
     dons:           totalDons,
   };
   const totalRecettes = Object.values(recettes).reduce((s,v)=>s+v,0);
-
-  const depensesAG = {};
   assistTypes.forEach(({key,label})=>{
     depensesAG[label] = assistances.filter(a=>a.type===key&&inP(a.dateVerse||a.dateEvent)).reduce((s,a)=>s+Number(a.montant||0),0);
   });
@@ -8989,11 +8992,21 @@ function genererBilanAG(){
   const totalDepenses = Object.values(depensesAG).reduce((s,v)=>s+v,0);
   const solde = totalRecettes - totalDepenses;
 
+  // Solde excédentaire exercice précédent
+  const _soldePrecedentAG = calculerSoldeAnnee
+    ? (calculerSoldeAnnee(String(parseInt(annee)-1)) > 0
+        ? calculerSoldeAnnee(String(parseInt(annee)-1))
+        : (Number(branding.soldePrecedent)||0))
+    : (Number(branding.soldePrecedent)||0);
+
+  // Solde Comptes & Trésorerie — uniquement pour la vérification de cohérence (hors recettes)
+  const _soldeTresorerie = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
+
   const recettesRows = [
-    ['Solde excédentaire exercice précédent', '—'],
+    ['Solde excédentaire exercice précédent', fmt(_soldePrecedentAG)+' FCFA'],
     ['Total cotisations mensuelles',          fmt(recettes.cotisations)+' FCFA'],
     ['Total cotisations exceptionnelles',     fmt(recettes.cotisationsExc)+' FCFA'],
-    ['Total droits d\'adhésion ('+membresAvecDroit.length+' membre(s))', fmt(recettes.droitsAdhesion)+' FCFA'],
+    ['Total droits d\'adhésion ('+membresAvecDroitFinal.length+' membre(s))', fmt(recettes.droitsAdhesion)+' FCFA'],
     ['Total dons & revenus / AGR',            fmt(recettes.dons)+' FCFA'],
   ];
   const depensesRows = Object.entries(depensesAG).map(([k,v])=>[k, fmt(v)+' FCFA']);
@@ -9077,28 +9090,81 @@ function genererBilanAG(){
       ${_pretDetailHTML}
     </div>`;
 
+  // ── Vérification cohérence Comptes & Trésorerie ──
+  const _soldeTreso   = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
+  const _ecart        = _soldeTreso - _soldeNet;
+  const _ecartAbs     = Math.abs(_ecart);
+  const _isOk         = _ecartAbs < 1;   // Tolérance 1 FCFA pour arrondis
+
+  const _coherenceHTML = `
+    <div style="margin-top:8px;background:${_isOk?'#F0FDF4':'#FFFBEB'};border:1.5px solid ${_isOk?'#BBF7D0':'#F59E0B'};border-radius:10px;padding:14px 20px">
+      <div style="font-size:12px;font-weight:700;color:${_isOk?'#166534':'#92400E'};margin-bottom:10px">
+        ${_isOk?'✅':'⚠️'} VÉRIFICATION — COHÉRENCE DES COMPTES
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
+        <span style="color:var(--gray-600)">Solde disponible net (Rapport Bilan)</span>
+        <span style="font-family:var(--mono);font-weight:600;color:#4C1D95">${fmt(_soldeNet)} FCFA</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;padding-bottom:10px;border-bottom:1px dashed ${_isOk?'#BBF7D0':'#FCD34D'}">
+        <span style="color:var(--gray-600)">Solde réel Comptes & Trésorerie (${comptes.filter(c=>c.actif).length} compte(s))</span>
+        <span style="font-family:var(--mono);font-weight:600;color:#1D4ED8">${fmt(_soldeTreso)} FCFA</span>
+      </div>
+      ${_isOk
+        ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#166534">
+            <span style="font-size:18px">✅</span>
+            <span>Comptes équilibrés — Aucun écart détecté</span>
+           </div>`
+        : `<div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div>
+                <div style="font-size:13px;font-weight:700;color:#92400E">ÉCART DÉTECTÉ</div>
+                <div style="font-size:11px;color:#78350F">Différence entre le bilan théorique et les comptes réels</div>
+              </div>
+              <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:${_ecart>0?'#16A34A':'#DC2626'}">
+                ${_ecart>0?'+':''}${fmt(_ecart)} FCFA
+              </div>
+            </div>
+            <div style="background:#FEF3C7;border-radius:6px;padding:8px 12px;font-size:11px;color:#78350F;line-height:1.6">
+              ${_ecart>0
+                ? `📌 Les Comptes & Trésorerie affichent <strong>${fmt(_ecartAbs)} FCFA de plus</strong> que le bilan théorique.<br>
+                   Cause possible : des opérations ont été enregistrées dans les comptes sans être saisies dans les modules (cotisations, dons, dépenses…), ou un ajustement manuel a été effectué.`
+                : `📌 Le Bilan AG affiche <strong>${fmt(_ecartAbs)} FCFA de plus</strong> que les Comptes & Trésorerie.<br>
+                   Cause possible : des cotisations ou recettes ont été saisies <strong>sans sélectionner un compte</strong> lors de l'enregistrement. Vérifiez que chaque opération est bien liée à un compte.`
+              }
+            </div>
+           </div>`
+      }
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid ${_isOk?'#BBF7D0':'#FCD34D'};font-size:10px;color:#9CA3AF">
+        ${comptes.filter(c=>c.actif).map(cp=>`${cp.nom} : ${fmt(getCompteSolde(cp.id))} FCFA`).join(' &nbsp;·&nbsp; ')}
+      </div>
+    </div>`;
+
+  document.getElementById('bag-section-bilan').innerHTML += _coherenceHTML;
+
 
   // ─────────────────────────────────────
-  // 6. PRÊTS
+  // 7. PRÊTS — Tous les prêts (pas filtré par période, données cumulatives)
   // ─────────────────────────────────────
-  const pretsP = prets.filter(p=>inP(p.date));
-  const pretsAnterieurs = prets.filter(p=>{
+  const pretsP           = prets.filter(p=>inP(p.date));                     // Accordés dans la période
+  const pretsAnterieurs  = prets.filter(p=>{                                  // Accordés avant la période
     if(!p.date) return false;
-    const d=new Date(p.date); return d.getFullYear()<annee;
+    if(dateDebutStr) return p.date < dateDebutStr;
+    return Number(p.date.substring(0,4)) < Number(annee);
   });
-  const totalAccordePeriode = pretsP.reduce((s,p)=>s+Number(p.montant||0),0);
-  const totalAccordeAnt = pretsAnterieurs.reduce((s,p)=>s+Number(p.montant||0),0);
-  const totalRembPeriode = remboursements.filter(r=>inP(r.date)).reduce((s,r)=>s+Number(r.montant||0),0);
-  const totalRembAnt = remboursements.filter(r=>{
-    if(!r.date) return false;
-    const d=new Date(r.date); return d.getFullYear()<annee;
-  }).reduce((s,r)=>s+Number(r.montant||0),0);
-  const totalAccorde = totalAccordePeriode+totalAccordeAnt;
-  const totalRembourse = totalRembPeriode+totalRembAnt;
-  const resteARembourser = Math.max(0, totalAccorde-totalRembourse);
-  const soldeDisponible = solde - resteARembourser;
+  const pretsEnCours     = prets.filter(p=>getPretStatut?.(p)!=='solde');     // TOUS les prêts non soldés
 
-  const pretsEnCours = prets.filter(p=>getPretStatut?.(p)!=='solde');
+  const totalAccordePeriode = pretsP.reduce((s,p)=>s+Number(p.montant||0),0);
+  const totalAccordeAnt     = pretsAnterieurs.reduce((s,p)=>s+Number(p.montant||0),0);
+  const totalAccorde        = totalAccordePeriode + totalAccordeAnt;
+  const totalRembPeriode    = remboursements.filter(r=>inP(r.date)).reduce((s,r)=>s+Number(r.montant||0),0);
+  const totalRembAnt        = remboursements.filter(r=>{
+    if(!r.date) return false;
+    if(dateDebutStr) return r.date < dateDebutStr;
+    return Number(r.date.substring(0,4)) < Number(annee);
+  }).reduce((s,r)=>s+Number(r.montant||0),0);
+  const totalRembourse      = totalRembPeriode + totalRembAnt;
+  const resteARembourser    = pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant?.(p)||0),0);
+  const soldeDisponible     = solde - resteARembourser;
 
   document.getElementById('bag-section-prets').innerHTML = `
     <div class="bag-section-title" style="background:#4C1D95">SITUATION DES PRÊTS</div>
@@ -9263,27 +9329,42 @@ function exportBilanAGExcel(){
   const totalRembPret=remboursements.reduce((s,r)=>s+Number(r.montant||0),0);
   const totalCapPret=prets.filter(p=>getPretStatut(p)!=='solde').reduce((s,p)=>s+Number(p.montant||0),0);
   const resteRembourser=Math.max(0,totalCapPret-totalRembPret);
+  const _soldePrecedentEl = calculerSoldeAnnee
+    ? (calculerSoldeAnnee(String(parseInt(annee)-1)) > 0
+        ? calculerSoldeAnnee(String(parseInt(annee)-1))
+        : (Number(branding.soldePrecedent)||0))
+    : (Number(branding.soldePrecedent)||0);
+  const _soldeTresorerieEl = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
+  const totalRecettesEl = _soldePrecedentEl+totalCotis+totalExcEl+totalDroitsEl+totalDonsEl;
+  const totalDepensesEl = totalAssist+totalDep;
   const bilanData=[
     ['BILAN GÉNÉRAL — PÉRIODE : '+label,''],
     ['',''],
     ['LES RECETTES','MONTANT (FCFA)'],
+    ['Solde excédentaire exercice précédent',_soldePrecedentEl],
     ['Cotisations mensuelles',totalCotis],
     ['Cotisations exceptionnelles',totalExcEl],
     ['Droits d\'adhésion ('+membresAvecDroitEl.length+' membre(s))',totalDroitsEl],
     ['Dons et revenus / AGR',totalDonsEl],
-    ['TOTAL RECETTES',totalRecettes],
+    ['TOTAL RECETTES',totalRecettesEl],
     ['',''],
     ['LES DÉPENSES','MONTANT (FCFA)'],
     ['Total assistances (10 types)',totalAssist],
     ['Total dépenses (fonctionnement + autres + activité)',totalDep],
-    ['TOTAL DÉPENSES',totalDepenses],
+    ['TOTAL DÉPENSES',totalDepensesEl],
     ['',''],
-    ['SOLDE DE LA PÉRIODE (Recettes - Dépenses)',solde],
+    ['SOLDE DE LA PÉRIODE (Recettes - Dépenses)',totalRecettesEl-totalDepensesEl],
     ['',''],
     ['Capital total prêts en cours',totalCapPret],
     ['Total remboursements reçus',totalRembPret],
     ['Reste à rembourser (prêts en cours)',resteRembourser],
-    ['SOLDE DISPONIBLE NET (Solde - Prêts restants)',solde-resteRembourser],
+    ['SOLDE DISPONIBLE NET (Solde - Prêts restants)',(totalRecettesEl-totalDepensesEl)-resteRembourser],
+    ['',''],
+    ['VÉRIFICATION COHÉRENCE',''],
+    ['Solde disponible net (Bilan)',(totalRecettesEl-totalDepensesEl)-resteRembourser],
+    ['Solde Comptes & Trésorerie ('+comptes.filter(c=>c.actif).length+' compte(s))',_soldeTresorerieEl],
+    ['Écart',_soldeTresorerieEl-((totalRecettesEl-totalDepensesEl)-resteRembourser)],
+    ['Statut',Math.abs(_soldeTresorerieEl-((totalRecettesEl-totalDepensesEl)-resteRembourser))<1?'✅ Équilibré':'⚠️ Écart détecté'],
   ];
   sheets.push({name:'Bilan Général', data:bilanData});
 
