@@ -8026,9 +8026,18 @@ function getPretStatut(pret){
 }
 
 function getPretCapitalRestant(pret){
-  const rembs = remboursements.filter(r=>r.pretId===pret.id);
-  const totalCapRemb = rembs.reduce((s,r)=>s+Number(r.capitalRembourse||0),0);
-  return Math.max(0, Number(pret.montant) - totalCapRemb);
+  if(!pret) return 0;
+  const rembs = remboursements.filter(r=>r.pretId===pret.id||r.pretId===String(pret.id));
+  // Méthode 1 : utiliser capitalRembourse si disponible
+  const hasCapitalField = rembs.some(r=>r.capitalRembourse!=null && Number(r.capitalRembourse)>0);
+  if(hasCapitalField){
+    const totalCapRemb = rembs.reduce((s,r)=>s+Number(r.capitalRembourse||0),0);
+    return Math.max(0, Number(pret.montant||0) - totalCapRemb);
+  }
+  // Méthode 2 : fallback — utiliser le montant total remboursé
+  // (cas où capitalRembourse n'est pas renseigné)
+  const totalRemb = rembs.reduce((s,r)=>s+Number(r.montant||0),0);
+  return Math.max(0, Number(pret.montant||0) - totalRemb);
 }
 
 // ── Recherche membre prêt ──
@@ -8167,7 +8176,7 @@ function savePret(){
   errEl.style.display='none';
   if(!memberCode){showErr('Sélectionnez un membre bénéficiaire.');return;}
   if(!montant||montant<=0){showErr('Le montant doit être supérieur à 0.');return;}
-  if(!taux||taux<=0){showErr('Le taux d\'intérêt est obligatoire.');return;}
+  if(taux<0||taux>100){showErr('Le taux doit être compris entre 0% et 100%.');return;}
   if(!duree||duree<1){showErr('La durée doit être d\'au moins 1 échéance.');return;}
   if(!date){showErr('La date de déblocage est obligatoire.');return;}
   const m=getMemberByCode(memberCode);
@@ -9038,7 +9047,7 @@ function genererBilanAG(){
     return Number(r.date.substring(0,4)) < Number(annee);
   }).reduce((s,r)=>s+Number(r.montant||0),0);
   const totalRembourse      = totalRembPeriode + totalRembAnt;
-  const resteARembourser    = pretsEnCours.reduce((s,p)=>s+Number(getPretCapitalRestant&&getPretCapitalRestant(p)||0),0);
+  const resteARembourser    = pretsEnCours.reduce((s,p)=>s+getPretCapitalRestant(p),0);
   const soldeDisponible     = solde - resteARembourser;
 
   // Vérification cohérence comptes
@@ -9084,7 +9093,7 @@ function genererBilanAG(){
     htmlBilan += '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #DDD6FE;font-size:11px;color:#6B7280"><div style="font-weight:600;color:#4C1D95;margin-bottom:4px">Détail :</div>';
     pretsEnCours.forEach(function(p){
       var mb = getMemberByCode(p.memberCode);
-      var cap = Number(getPretCapitalRestant&&getPretCapitalRestant(p)||0);
+      var cap = getPretCapitalRestant(p);
       htmlBilan += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>'+(mb?(mb.prenom?mb.prenom+' ':'')+mb.nom:p.memberCode)+'</span><span style="font-family:var(--mono);color:#7C3AED">− '+fmt(cap)+' FCFA</span></div>';
     });
     htmlBilan += '</div>';
@@ -9130,7 +9139,7 @@ function genererBilanAG(){
     htmlPrets += '</tr></thead><tbody>';
     pretsEnCours.forEach(function(p, i){
       var mb = getMemberByCode(p.memberCode);
-      var cap = Number(getPretCapitalRestant&&getPretCapitalRestant(p)||0);
+      var cap = getPretCapitalRestant(p);
       var remb = remboursements.filter(function(r){return r.pretId===p.id;}).reduce(function(s,r){return s+Number(r.montant||0);},0);
       var statut = getPretStatut&&getPretStatut(p);
       htmlPrets += '<tr style="background:'+(i%2===0?'#fff':'#F5F3FF')+'">';
@@ -11648,7 +11657,7 @@ function exportPDF(type){
         </div>
         <div class="field">
           <label>Taux d'intérêt (% / mois) *</label>
-          <input type="number" id="pret-taux" placeholder="Ex: 2" min="0" max="100" step="0.1" oninput="calcAmortissement()"/>
+          <input type="number" id="pret-taux" placeholder="Ex: 2 (0 = sans intérêt)" min="0" max="100" step="0.1" oninput="calcAmortissement()"/>
         </div>
         <div class="field">
           <label>Durée (nb d'échéances) *</label>
@@ -15960,7 +15969,7 @@ function showReadonlyBanner(){
         </div>
         <div class="field">
           <label>Taux d'intérêt (% / mois) *</label>
-          <input type="number" id="pret-taux" placeholder="Ex: 2" min="0" max="100" step="0.1" oninput="calcAmortissement()"/>
+          <input type="number" id="pret-taux" placeholder="Ex: 2 (0 = sans intérêt)" min="0" max="100" step="0.1" oninput="calcAmortissement()"/>
         </div>
         <div class="field">
           <label>Durée (nb d'échéances) *</label>
