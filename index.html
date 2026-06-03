@@ -4309,6 +4309,15 @@ function getSolde(m, annee){
   const nbDus = getNbMoisDus(m, yr);
   return (m.quota * nbDus) - getTotalPaid(m, yr);
 }
+
+// Affichage compact d'un montant — exact si < 1000, sinon en K
+function fmtK(val){
+  const n = Number(val)||0;
+  if(n < 1000) return n.toLocaleString('fr-FR');
+  if(n < 1000000) return (n/1000).toFixed(n%1000===0?0:1)+'K';
+  return (n/1000000).toFixed(2)+'M';
+}
+
 function fmt(n){ return Number(n).toLocaleString('fr-FR')+' F'; }
 
 // Mois actuel réel (ex: "Mai")
@@ -5311,12 +5320,12 @@ function renderAdminDashboard(){
 
   document.getElementById('admin-stats').innerHTML=`
     <div class="stat-card blue"><div class="stat-label">Membres actifs</div><div class="stat-value">${actifs.length}</div><div class="stat-sub">${inactifs.length} inactif(s)</div></div>
-    <div class="stat-card green"><div class="stat-label">Total collecté ${annee}</div><div class="stat-value">${(totalCollecte/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalCollecte)}</div></div>
-    <div class="stat-card orange"><div class="stat-label">Restant à collecter ${annee}</div><div class="stat-value">${(totalSolde/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalSolde)}</div></div>
-    <div class="stat-card ${totalRestantMoisActuel===0?'green':''}"><div class="stat-label">Restant dû au mois de ${moisCurAdmin}</div><div class="stat-value" style="color:${totalRestantMoisActuel===0?'var(--green)':'#DC2626'}">${(totalRestantMoisActuel/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalRestantMoisActuel)}</div></div>
+    <div class="stat-card green"><div class="stat-label">Total collecté ${annee}</div><div class="stat-value">${fmtK(totalCollecte)} FCFA</div><div class="stat-sub">${fmt(totalCollecte)}</div></div>
+    <div class="stat-card orange"><div class="stat-label">Restant à collecter ${annee}</div><div class="stat-value">${fmtK(totalSolde)} FCFA</div><div class="stat-sub">${fmt(totalSolde)}</div></div>
+    <div class="stat-card ${totalRestantMoisActuel===0?'green':''}"><div class="stat-label">Restant dû au mois de ${moisCurAdmin}</div><div class="stat-value" style="color:${totalRestantMoisActuel===0?'var(--green)':'#DC2626'}">${fmtK(totalRestantMoisActuel)} FCFA</div><div class="stat-sub">${fmt(totalRestantMoisActuel)}</div></div>
     <div class="stat-card ${nbAjourMoisActuel===actifs.length?'green':''}"><div class="stat-label">À jour au mois de ${moisCurAdmin}</div><div class="stat-value">${nbAjourMoisActuel}/${actifs.length}</div><div class="stat-sub">${actifs.length-nbAjourMoisActuel} en retard</div></div>
     <div class="stat-card purple"><div class="stat-label">Nouvelles adhésions ${annee}</div><div class="stat-value">${nouvellesAdhesions.length}</div><div class="stat-sub">${nouvellesAdhesions.length>0?'Dernier : '+new Date(nouvellesAdhesions.sort((a,b)=>new Date(b.date)-new Date(a.date))[0].date).toLocaleDateString('fr-FR'):'Aucune cette année'}</div></div>
-    <div class="stat-card" style="background:#F5F3FF;border:1px solid #DDD6FE"><div class="stat-label" style="color:#7C3AED">Prêts restants à rembourser</div><div class="stat-value" style="color:#7C3AED;font-size:18px">${((_totalPretRest)/1000).toFixed(0)}K</div><div class="stat-sub" style="color:#7C3AED">${_pretsEnCours.length} prêt(s) en cours · ${fmt(_totalPretRest)} FCFA</div></div>`;
+    <div class="stat-card" style="background:#F5F3FF;border:1px solid #DDD6FE"><div class="stat-label" style="color:#7C3AED">Prêts restants à rembourser</div><div class="stat-value" style="color:#7C3AED;font-size:18px">${fmtK(_totalPretRest)} FCFA</div><div class="stat-sub" style="color:#7C3AED">${_pretsEnCours.length} prêt(s) en cours</div></div>`;
 
   const prog = document.getElementById('month-progress');
   prog.innerHTML = moisActifsAnnee.map((mn)=>{
@@ -6337,8 +6346,8 @@ function renderExcAdmin(){
   const totalAttendu = excCotisations.reduce((s,e)=>s+(e.montant*getExcMembers(e).length),0);
   statsEl.innerHTML=`
     <div class="stat-card purple"><div class="stat-label">Total créées</div><div class="stat-value">${total}</div><div class="stat-sub">${active} active(s)</div></div>
-    <div class="stat-card green"><div class="stat-label">Total collecté</div><div class="stat-value">${(totalCollecte/1000).toFixed(1)}K</div><div class="stat-sub">${totalCollecte.toLocaleString('fr-FR')} FCFA</div></div>
-    <div class="stat-card orange"><div class="stat-label">Restant à collecter</div><div class="stat-value">${((totalAttendu-totalCollecte)/1000).toFixed(1)}K</div><div class="stat-sub">${(totalAttendu-totalCollecte).toLocaleString('fr-FR')} FCFA</div></div>
+    <div class="stat-card green"><div class="stat-label">Total collecté</div><div class="stat-value">${fmtK(totalCollecte)} FCFA</div><div class="stat-sub">${totalCollecte.toLocaleString('fr-FR')} FCFA</div></div>
+    <div class="stat-card orange"><div class="stat-label">Restant à collecter</div><div class="stat-value">${fmtK(totalAttendu-totalCollecte)} FCFA</div><div class="stat-sub">${(totalAttendu-totalCollecte).toLocaleString('fr-FR')} FCFA</div></div>
     <div class="stat-card"><div class="stat-label">Taux de collecte</div><div class="stat-value">${totalAttendu?Math.round(totalCollecte/totalAttendu*100):0}%</div><div class="stat-sub">global</div></div>`;
 
   if(!excCotisations.length){
@@ -6768,7 +6777,7 @@ function renderAssistAdmin(){
 
   statsEl.innerHTML=`
     <div class="assist-stat-card"><span class="assist-stat-value">${total}</span><span class="assist-stat-label">Total assistances</span></div>
-    <div class="assist-stat-card"><span class="assist-stat-value">${(totalMont/1000).toFixed(0)}K</span><span class="assist-stat-label">FCFA versés</span></div>
+    <div class="assist-stat-card"><span class="assist-stat-value">${fmtK(totalMont)} FCFA</span><span class="assist-stat-label">FCFA versés</span></div>
     <div class="assist-stat-card"><span class="assist-stat-value">${total?Math.round(totalMont/total).toLocaleString('fr-FR'):'—'}</span><span class="assist-stat-label">Moyenne / assistance</span></div>
     <div class="assist-stat-card"><span class="assist-stat-value">${topType&&topType.n?(ASSIST_TYPES[topType.t].icon+' '+topType.n):'—'}</span><span class="assist-stat-label">Type le + fréquent</span></div>`;
 
@@ -8027,17 +8036,50 @@ function getPretStatut(pret){
 
 function getPretCapitalRestant(pret){
   if(!pret) return 0;
-  const rembs = remboursements.filter(r=>r.pretId===pret.id||r.pretId===String(pret.id));
-  // Méthode 1 : utiliser capitalRembourse si disponible
-  const hasCapitalField = rembs.some(r=>r.capitalRembourse!=null && Number(r.capitalRembourse)>0);
-  if(hasCapitalField){
-    const totalCapRemb = rembs.reduce((s,r)=>s+Number(r.capitalRembourse||0),0);
-    return Math.max(0, Number(pret.montant||0) - totalCapRemb);
+  const montant = Number(pret.montant||0);
+  if(!montant) return 0;
+  const pretId = String(pret.id);
+  const rembs = remboursements.filter(r=>String(r.pretId)===pretId);
+  if(!rembs.length) return montant;
+
+  // Méthode 1 : utiliser capitalRembourse si disponible ET non nul pour au moins un remboursement
+  const capsValides = rembs.filter(r=>Number(r.capitalRembourse)>0);
+  if(capsValides.length > 0){
+    // Cas mixte : certains ont capitalRembourse, d'autres non
+    // Pour ceux sans capitalRembourse → recalculer depuis le tableau d'amortissement
+    const rows = getAmortissement(pret);
+    let totalCap = 0;
+    rembs.forEach(r=>{
+      const cap = Number(r.capitalRembourse);
+      if(cap > 0){
+        totalCap += cap;
+      } else {
+        // Pas de capitalRembourse → retrouver dans le tableau d'amortissement
+        const row = rows.find(x=>x.n===Number(r.numEcheance));
+        if(row){
+          totalCap += Number(row.capital||0);
+        } else {
+          // Dernier recours : déduire le montant remboursé (moins précis mais mieux que 0)
+          totalCap += Number(r.montant||0);
+        }
+      }
+    });
+    return Math.max(0, montant - totalCap);
   }
-  // Méthode 2 : fallback — utiliser le montant total remboursé
-  // (cas où capitalRembourse n'est pas renseigné)
-  const totalRemb = rembs.reduce((s,r)=>s+Number(r.montant||0),0);
-  return Math.max(0, Number(pret.montant||0) - totalRemb);
+
+  // Méthode 2 : aucun capitalRembourse → recalculer depuis le tableau d'amortissement
+  const rows = getAmortissement(pret);
+  let totalCap = 0;
+  rembs.forEach(r=>{
+    const row = rows.find(x=>x.n===Number(r.numEcheance));
+    if(row){
+      totalCap += Number(row.capital||0);
+    } else {
+      // Pas de correspondance d'échéance → utiliser r.montant comme approximation
+      totalCap += Number(r.montant||0);
+    }
+  });
+  return Math.max(0, montant - totalCap);
 }
 
 // ── Recherche membre prêt ──
@@ -8259,11 +8301,35 @@ function saveRemboursement(){
   const pret=prets.find(x=>x.id===pretId);if(!pret)return;
   const rows=getAmortissement(pret);
   const row=rows.find(r=>r.n===numEch);
+  // Calculer le capital remboursé :
+  // - Si l'échéance est trouvée dans le tableau → utiliser row.capital
+  // - Si le montant saisi est différent de l'échéance (remboursement partiel) → recalculer
+  // - Si pas de tableau → montant complet est du capital (taux 0%)
+  let capitalRembourse = 0;
+  let interetsRembourses = 0;
+  if(row){
+    if(montant === row.echeance){
+      // Remboursement exact de l'échéance
+      capitalRembourse = row.capital;
+      interetsRembourses = row.interets;
+    } else {
+      // Remboursement partiel ou différent → proportionnel
+      const ratio = montant / row.echeance;
+      capitalRembourse = Math.round(row.capital * ratio);
+      interetsRembourses = Math.round(row.interets * ratio);
+    }
+  } else {
+    // Pas d'échéance trouvée → calculer intérêts sur le capital restant actuel
+    const capitalRestantAvant = getPretCapitalRestant(pret);
+    const tauxPeriode = Number(pret.taux||0) * (pret.periodicite==='trimestriel'?3:pret.periodicite==='annuel'?12:1) / 100;
+    interetsRembourses = Math.round(capitalRestantAvant * tauxPeriode);
+    capitalRembourse = Math.max(0, montant - interetsRembourses);
+  }
   const record={
     id:'remb_'+Date.now(),
     pretId, numEcheance:numEch, montant,
-    capitalRembourse:row?row.capital:0,
-    interetsRembourses:row?row.interets:0,
+    capitalRembourse,
+    interetsRembourses,
     date, mode:document.getElementById('rembours-mode').value,
     notes:document.getElementById('rembours-notes').value.trim(),
     memberCode:pret.memberCode,
@@ -8402,8 +8468,8 @@ function renderPretsAdmin(){
   const nbRetard=prets.filter(p=>getPretStatut(p)==='retard').length;
   const nbSoldes=prets.filter(p=>getPretStatut(p)==='solde').length;
   document.getElementById('prets-stats').innerHTML=`
-    <div class="stat-card blue"><div class="stat-label">Capital prêté actif</div><div class="stat-value">${(totalCapital/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalCapital)} FCFA</div></div>
-    <div class="stat-card green"><div class="stat-label">Total remboursé</div><div class="stat-value">${(totalRembourse/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalRembourse)} FCFA</div></div>
+    <div class="stat-card blue"><div class="stat-label">Capital prêté actif</div><div class="stat-value">${fmtK(totalCapital)} FCFA</div><div class="stat-sub">${fmt(totalCapital)} FCFA</div></div>
+    <div class="stat-card green"><div class="stat-label">Total remboursé</div><div class="stat-value">${fmtK(totalRembourse)} FCFA</div><div class="stat-sub">${fmt(totalRembourse)} FCFA</div></div>
     <div class="stat-card"><div class="stat-label">En cours</div><div class="stat-value">${nbEnCours}</div><div class="stat-sub">prêt(s)</div></div>
     <div class="stat-card" style="border-left:3px solid #DC2626"><div class="stat-label">En retard</div><div class="stat-value" style="color:#DC2626">${nbRetard}</div><div class="stat-sub">prêt(s)</div></div>
     <div class="stat-card"><div class="stat-label">Soldés</div><div class="stat-value" style="color:#6B7280">${nbSoldes}</div><div class="stat-sub">prêt(s)</div></div>`;
@@ -8475,8 +8541,8 @@ function renderPretsMember(){
   const totalRembourse=remboursements.filter(r=>r.memberCode===currentMember.code).reduce((s,r)=>s+Number(r.montant),0);
   const enCours=mesPrets.filter(p=>getPretStatut(p)!=='solde').length;
   document.getElementById('prets-member-stats').innerHTML=`
-    <div class="stat-card blue"><div class="stat-label">Total emprunté</div><div class="stat-value">${(totalEmprunte/1000).toFixed(0)}K</div><div class="stat-sub">${mesPrets.length} prêt(s)</div></div>
-    <div class="stat-card green"><div class="stat-label">Total remboursé</div><div class="stat-value">${(totalRembourse/1000).toFixed(0)}K</div><div class="stat-sub">FCFA</div></div>
+    <div class="stat-card blue"><div class="stat-label">Total emprunté</div><div class="stat-value">${fmtK(totalEmprunte)} FCFA</div><div class="stat-sub">${mesPrets.length} prêt(s)</div></div>
+    <div class="stat-card green"><div class="stat-label">Total remboursé</div><div class="stat-value">${fmtK(totalRembourse)} FCFA</div><div class="stat-sub">FCFA</div></div>
     <div class="stat-card"><div class="stat-label">En cours</div><div class="stat-value">${enCours}</div><div class="stat-sub">prêt(s)</div></div>`;
   const el=document.getElementById('prets-member-list');
   if(!mesPrets.length){el.innerHTML='<div style="text-align:center;padding:40px;color:var(--gray-400)">Aucun prêt enregistré</div>';return;}
@@ -10223,8 +10289,8 @@ function renderProjetsAdmin(){
   const nbTermines=projets.filter(p=>p.statut==='termine').length;
   document.getElementById('projets-stats').innerHTML=`
     <div class="stat-card blue"><div class="stat-label">Total projets</div><div class="stat-value">${projets.length}</div><div class="stat-sub">${nbActifs} actif(s)</div></div>
-    <div class="stat-card green"><div class="stat-label">Total collecté</div><div class="stat-value">${(totalCollecte/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalCollecte)} FCFA</div></div>
-    <div class="stat-card orange"><div class="stat-label">Objectif total</div><div class="stat-value">${(totalCible/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalCible)} FCFA</div></div>
+    <div class="stat-card green"><div class="stat-label">Total collecté</div><div class="stat-value">${fmtK(totalCollecte)} FCFA</div><div class="stat-sub">${fmt(totalCollecte)} FCFA</div></div>
+    <div class="stat-card orange"><div class="stat-label">Objectif total</div><div class="stat-value">${fmtK(totalCible)} FCFA</div><div class="stat-sub">${fmt(totalCible)} FCFA</div></div>
     <div class="stat-card"><div class="stat-label">Terminés</div><div class="stat-value">${nbTermines}</div><div class="stat-sub">projet(s)</div></div>`;
 
   const el=document.getElementById('projets-admin-list');
@@ -10293,9 +10359,9 @@ function renderProjetDetail(id){
   const nbAjour=(p.repartition||[]).filter(r=>getProjetStatutMembre(p,r.code)==='ajour').length;
   const nbRetard=(p.repartition||[]).length-nbAjour;
   document.getElementById('projet-detail-stats').innerHTML=`
-    <div class="stat-card blue"><div class="stat-label">Objectif</div><div class="stat-value">${(Number(p.montantCible)/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(p.montantCible)} FCFA</div></div>
-    <div class="stat-card green"><div class="stat-label">Collecté</div><div class="stat-value">${(collecte/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(collecte)} FCFA</div></div>
-    <div class="stat-card orange"><div class="stat-label">Restant</div><div class="stat-value">${(Math.max(0,Number(p.montantCible)-collecte)/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(Math.max(0,Number(p.montantCible)-collecte))} FCFA</div></div>
+    <div class="stat-card blue"><div class="stat-label">Objectif</div><div class="stat-value">${fmtK(Number(p.montantCible))} FCFA</div><div class="stat-sub">${fmt(p.montantCible)} FCFA</div></div>
+    <div class="stat-card green"><div class="stat-label">Collecté</div><div class="stat-value">${fmtK(collecte)} FCFA</div><div class="stat-sub">${fmt(collecte)} FCFA</div></div>
+    <div class="stat-card orange"><div class="stat-label">Restant</div><div class="stat-value">${fmtK(Math.max(0,Number(p.montantCible-collecte)))} FCFA</div><div class="stat-sub">${fmt(Math.max(0,Number(p.montantCible)-collecte))} FCFA</div></div>
     <div class="stat-card ${nbRetard?'':'green'}"><div class="stat-label">À jour / En retard</div><div class="stat-value">${nbAjour}/${(p.repartition||[]).length}</div><div class="stat-sub" style="color:${nbRetard?'#DC2626':'#16A34A'}">${nbRetard} en retard</div></div>`;
 
   // Progress card
@@ -10502,12 +10568,12 @@ function renderProjetsMemeber(){
         </div>
         <div class="stat-card green">
           <div class="stat-label">Total payé</div>
-          <div class="stat-value">${(totalPaye/1000).toFixed(0)}K</div>
+          <div class="stat-value">${fmtK(totalPaye)} FCFA</div>
           <div class="stat-sub">${fmt(totalPaye)} FCFA</div>
         </div>
         <div class="stat-card orange">
           <div class="stat-label">Montant restant</div>
-          <div class="stat-value" style="color:${totalRestant===0?'var(--green)':'#DC2626'}">${(totalRestant/1000).toFixed(0)}K</div>
+          <div class="stat-value" style="color:${totalRestant===0?'var(--green)':'#DC2626'}">${fmtK(totalRestant)} FCFA</div>
           <div class="stat-sub">${fmt(totalRestant)} FCFA</div>
         </div>
         <div class="stat-card" style="background:#F0FDF4;border:1px solid #BBF7D0">
@@ -10524,8 +10590,8 @@ function renderProjetsMemeber(){
         </div>
         <div class="stat-card purple">
           <div class="stat-label">Mon quota total</div>
-          <div class="stat-value">${(totalQuota/1000).toFixed(0)}K</div>
-          <div class="stat-sub">${fmt(totalQuota)} FCFA</div>
+          <div class="stat-value">${fmtK(totalQuota)} FCFA</div>
+          <div class="stat-sub">&nbsp;</div>
         </div>`;
     }
   }
@@ -10992,7 +11058,7 @@ function renderPatrimoineAdmin(){
 
   document.getElementById('patrimoine-stats').innerHTML=`
     <div class="stat-card blue"><div class="stat-label">Biens actifs</div><div class="stat-value">${totalBiens}</div><div class="stat-sub">${actifs.length} type(s)</div></div>
-    <div class="stat-card green"><div class="stat-label">Valeur totale</div><div class="stat-value">${(totalValeur/1000).toFixed(0)}K</div><div class="stat-sub">${fmt(totalValeur)}</div></div>
+    <div class="stat-card green"><div class="stat-label">Valeur totale</div><div class="stat-value">${fmtK(totalValeur)} FCFA</div><div class="stat-sub">${fmt(totalValeur)}</div></div>
     <div class="stat-card"><div class="stat-label">Bon état</div><div class="stat-value">${actifs.filter(p=>p.etat==='bon').length}</div><div class="stat-sub">bien(s)</div></div>
     <div class="stat-card orange"><div class="stat-label">À surveiller</div><div class="stat-value">${actifs.filter(p=>p.etat==='moyen'||p.etat==='mauvais').length}</div><div class="stat-sub">bien(s)</div></div>
     <div class="stat-card"><div class="stat-label">Sortis</div><div class="stat-value">${nbSortis}</div><div class="stat-sub">bien(s)</div></div>`;
@@ -12512,12 +12578,12 @@ function renderDepenses(){
   const solde = totalCotis + totalCotisExc + totalDroits + totalDonsEsp - totalMont - totalAssistD + _soldePrecedent;
 
   statsEl.innerHTML=`
-    <div class="stat-card"><div class="stat-label">Total dépensé</div><div class="stat-value" style="color:#DC2626">${(totalMont/1000).toFixed(1)}K</div><div class="stat-sub">${totalMont.toLocaleString('fr-FR')} FCFA</div></div>
-    <div class="stat-card"><div class="stat-label">Activités</div><div class="stat-value" style="color:#5B21B6">${(totalAct/1000).toFixed(1)}K</div><div class="stat-sub">${depenses.filter(d=>d.type==='activite').length} dépense(s)</div></div>
-    <div class="stat-card"><div class="stat-label">Autres dépenses</div><div class="stat-value" style="color:#D97706">${(totalAutres/1000).toFixed(1)}K</div><div class="stat-sub">${depenses.filter(d=>d.type==='autres').length} dépense(s)</div></div>
-    <div class="stat-card"><div class="stat-label">Fonctionnement</div><div class="stat-value" style="color:#B45309">${(totalFonct/1000).toFixed(1)}K</div><div class="stat-sub">${depenses.filter(d=>d.type==='fonctionnement').length} dépense(s)</div></div>
-    ${_soldePrecedent>0?`<div class="stat-card blue"><div class="stat-label">🏦 Report précédent</div><div class="stat-value">${(_soldePrecedent/1000).toFixed(1)}K</div><div class="stat-sub">${_soldePrecedent.toLocaleString('fr-FR')} FCFA</div></div>`:''}
-    <div class="stat-card ${solde>=0?'green':''}"><div class="stat-label">Solde trésorerie</div><div class="stat-value" style="color:${solde>=0?'var(--green)':'#DC2626'}">${(Math.abs(solde)/1000).toFixed(1)}K</div><div class="stat-sub">${solde>=0?'Excédent':'Déficit'}</div></div>`;
+    <div class="stat-card"><div class="stat-label">Total dépensé</div><div class="stat-value" style="color:#DC2626">${fmtK(totalMont)} FCFA</div><div class="stat-sub">${totalMont.toLocaleString('fr-FR')} FCFA</div></div>
+    <div class="stat-card"><div class="stat-label">Activités</div><div class="stat-value" style="color:#5B21B6">${fmtK(totalAct)} FCFA</div><div class="stat-sub">${depenses.filter(d=>d.type==='activite').length} dépense(s)</div></div>
+    <div class="stat-card"><div class="stat-label">Autres dépenses</div><div class="stat-value" style="color:#D97706">${fmtK(totalAutres)} FCFA</div><div class="stat-sub">${depenses.filter(d=>d.type==='autres').length} dépense(s)</div></div>
+    <div class="stat-card"><div class="stat-label">Fonctionnement</div><div class="stat-value" style="color:#B45309">${fmtK(totalFonct)} FCFA</div><div class="stat-sub">${depenses.filter(d=>d.type==='fonctionnement').length} dépense(s)</div></div>
+    ${_soldePrecedent>0?`<div class="stat-card blue"><div class="stat-label">🏦 Report précédent</div><div class="stat-value">${fmtK(_soldePrecedent)} FCFA</div><div class="stat-sub">${_soldePrecedent.toLocaleString('fr-FR')} FCFA</div></div>`:''}
+    <div class="stat-card ${solde>=0?'green':''}"><div class="stat-label">Solde trésorerie</div><div class="stat-value" style="color:${solde>=0?'var(--green)':'#DC2626'}">${fmtK(Math.abs(solde))} FCFA</div><div class="stat-sub">${solde>=0?'Excédent':'Déficit'}</div></div>`;
 
   // Filter buttons
   const activites = [...new Set(depenses.filter(d=>d.activite).map(d=>d.activite))];
@@ -14866,9 +14932,9 @@ function renderDons(){
   const nbDonateurs = new Set(dons.map(d=>d.donateur)).size;
 
   statsEl.innerHTML=`
-    <div class="stat-card green"><div class="stat-label">Dons en espèces</div><div class="stat-value" style="color:#059669">${(totalEsp/1000).toFixed(1)}K</div><div class="stat-sub">${totalEsp.toLocaleString('fr-FR')} FCFA</div></div>
+    <div class="stat-card green"><div class="stat-label">Dons en espèces</div><div class="stat-value" style="color:#059669">${fmtK(totalEsp)} FCFA</div><div class="stat-sub">${totalEsp.toLocaleString('fr-FR')} FCFA</div></div>
     <div class="stat-card"><div class="stat-label">Dons en nature</div><div class="stat-value">${totalNat}</div><div class="stat-sub">don(s) matériels</div></div>
-    <div class="stat-card blue"><div class="stat-label">Valeur totale estimée</div><div class="stat-value">${(totalVal/1000).toFixed(1)}K</div><div class="stat-sub">espèces + nature</div></div>
+    <div class="stat-card blue"><div class="stat-label">Valeur totale estimée</div><div class="stat-value">${fmtK(totalVal)} FCFA</div><div class="stat-sub">espèces + nature</div></div>
     <div class="stat-card"><div class="stat-label">Donateurs distincts</div><div class="stat-value">${nbDonateurs}</div><div class="stat-sub">${dons.length} don(s) total</div></div>`;
 
   const activites = [...new Set(dons.filter(d=>d.activite).map(d=>d.activite))];
@@ -15071,10 +15137,10 @@ function renderImportPage(){
       <div style="font-size:20px;font-weight:700;color:var(--navy);font-family:var(--mono);min-width:52px">${y}</div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;flex:1;font-size:12px">
         <span>👥 <strong>${mbs}</strong> membres</span>
-        <span style="color:var(--green)">💰 <strong>${(cotis/1000).toFixed(0)}K F</strong> cotisations</span>
-        <span style="color:#059669">🎁 <strong>${(donTot/1000).toFixed(0)}K F</strong> dons</span>
-        <span style="color:#DC2626">💸 <strong>${(depTot/1000).toFixed(0)}K F</strong> dépenses</span>
-        <span style="font-weight:700;color:${solde>=0?'var(--green)':'#DC2626'}">📊 Solde : ${(solde/1000).toFixed(0)}K F</span>
+        <span style="color:var(--green)">💰 <strong>${fmtK(cotis)} FCFA F</strong> cotisations</span>
+        <span style="color:#059669">🎁 <strong>${fmtK(donTot)} FCFA F</strong> dons</span>
+        <span style="color:#DC2626">💸 <strong>${fmtK(depTot)} FCFA F</strong> dépenses</span>
+        <span style="font-weight:700;color:${solde>=0?'var(--green)':'#DC2626'}">📊 Solde : ${fmtK(solde)} FCFA F</span>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="setAnneeActive('${y}')">
