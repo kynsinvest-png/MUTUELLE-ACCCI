@@ -8047,36 +8047,45 @@ function getPretCapitalRestant(pret){
   const rembs = remboursements.filter(r=>String(r.pretId)===pretId);
   if(!rembs.length) return montant;
 
-  // Recalculer depuis le tableau d'amortissement pour chaque remboursement
-  const rows = getAmortissement(pret);
+  const taux = Number(pret.taux||0);
 
+  // Cas taux = 0% : tout versement est du capital pur, pas d'intérêts
+  // Capital restant = Capital initial − Somme de tous les montants versés
+  if(taux === 0){
+    const totalVerse = rembs.reduce((s,r)=>s+Number(r.montant||0),0);
+    return Math.max(0, montant - totalVerse);
+  }
+
+  // Cas taux > 0% : déduire uniquement la part capital (pas les intérêts)
+  const rows = getAmortissement(pret);
   let totalCapitalRembourse = 0;
+
   rembs.forEach(r=>{
-    // 1. Utiliser capitalRembourse si valide
+    // 1. Utiliser capitalRembourse si explicitement renseigné et > 0
     const capField = Number(r.capitalRembourse);
     if(capField > 0){
       totalCapitalRembourse += capField;
       return;
     }
-    // 2. Retrouver dans le tableau d'amortissement par numéro d'échéance
+    // 2. Retrouver la part capital dans le tableau d'amortissement
     const row = rows.find(x=>x.n===Number(r.numEcheance));
-    if(row && Number(row.capital) > 0){
-      totalCapitalRembourse += Number(row.capital);
+    if(row){
+      // Si le montant versé = l'échéance exacte → utiliser row.capital
+      // Si versement partiel → calculer proportionnellement
+      if(Math.abs(Number(r.montant) - row.echeance) <= 1){
+        totalCapitalRembourse += Number(row.capital||0);
+      } else {
+        // Versement partiel : capital proportionnel
+        const ratio = row.echeance > 0 ? Number(r.montant) / row.echeance : 1;
+        totalCapitalRembourse += Math.round(Number(row.capital||0) * ratio);
+      }
       return;
     }
-    // 3. Dernier recours : si taux = 0, tout le montant est du capital
-    if(!Number(pret.taux)){
-      totalCapitalRembourse += Number(r.montant||0);
-      return;
-    }
-    // 4. Calculer le capital à partir du montant remboursé et du taux
-    // capital = montant_remboursé - intérêts
-    // On ne peut pas calculer les intérêts exactement sans connaître le solde
-    // → utiliser le montant directement (approximation)
+    // 3. Pas d'échéance correspondante → utiliser r.montant (approximation)
     totalCapitalRembourse += Number(r.montant||0);
   });
 
-  // Capital restant = Capital initial - Total capital remboursé
+  // Capital restant = Capital initial − Total capital remboursé
   return Math.max(0, montant - totalCapitalRembourse);
 }
 
