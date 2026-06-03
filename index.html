@@ -3217,11 +3217,11 @@ html, body {
       </div>
       <div class="field">
         <label>Date d'adhésion</label>
-        <input type="date" id="m-date" value="2026-01-01"/>
+        <input type="date" id="m-date" value="2026-01-01" onchange="updateReglePreview()"/>
       </div>
       <div class="field">
         <label>🗓️ Démarrage des cotisations</label>
-        <select id="m-regle-cotisation">
+        <select id="m-regle-cotisation" onchange="updateReglePreview()">
           <option value="defaut">Appliquer la règle de la mutuelle</option>
           <option value="mois_adhesion">Mois d'adhésion (forcer)</option>
           <option value="mois_suivant">Mois suivant l'adhésion (forcer)</option>
@@ -5702,8 +5702,59 @@ function openEditMember(idx){
   document.getElementById('m-date').value=m.date||'2026-03-01';
   document.getElementById('modal-err').style.display='none';
   _initDroitAdhesionField(!!m.droitPaye);
+  // Règle cotisation
+  const regleEl = document.getElementById('m-regle-cotisation');
+  if(regleEl) regleEl.value = m.regleCotisation || 'defaut';
+  updateReglePreview();
   updateSlipPreview();
   openModal('modal-member');
+}
+
+// ─ Preview de la règle de démarrage des cotisations
+function updateReglePreview(){
+  const dateVal   = document.getElementById('m-date')?.value || '';
+  const regleEl   = document.getElementById('m-regle-cotisation');
+  const previewEl = document.getElementById('m-regle-preview');
+  if(!regleEl || !previewEl) return;
+
+  const regle = regleEl.value;
+  const anneeActive = parseInt(_anneeActive) || new Date().getFullYear();
+
+  if(!dateVal){ previewEl.textContent = ''; return; }
+
+  const d = new Date(dateVal);
+  if(isNaN(d)){ previewEl.textContent = ''; return; }
+
+  const anneeAdh = d.getFullYear();
+  const moisAdh  = d.getMonth(); // 0-based
+
+  // Ancien membre → toujours Janvier
+  if(anneeAdh < anneeActive){
+    previewEl.innerHTML = `ℹ️ Membre ancien → <strong>Janvier ${anneeActive}</strong> (année complète)`;
+    return;
+  }
+
+  // Calculer la règle effective
+  const regleGlobale = branding.regleCotisation || 'mois_adhesion';
+  const regleEffective = (regle === 'defaut') ? regleGlobale : regle;
+
+  let premierMois;
+  if(regleEffective === 'mois_suivant'){
+    premierMois = moisAdh + 1;
+    if(premierMois > 11){
+      previewEl.innerHTML = `⚠️ Adhésion en Décembre + "mois suivant" → <strong>Aucune cotisation cette année</strong> (commence Janvier ${anneeActive+1})`;
+      return;
+    }
+  } else {
+    premierMois = moisAdh;
+  }
+
+  const nbMois = 12 - premierMois;
+  const MOIS_NOM = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  const icone = regle === 'defaut' ? '🔗' : '⚙️';
+  const regleLabel = regle === 'defaut' ? `Règle mutuelle (${regleGlobale==='mois_suivant'?'mois suivant':'mois adhésion'})` : (regle==='mois_suivant'?'Forcé — mois suivant':'Forcé — mois adhésion');
+
+  previewEl.innerHTML = `${icone} ${regleLabel} → 1er mois : <strong>${MOIS_NOM[premierMois]}</strong> · <strong>${nbMois} mois</strong> à cotiser cette année`;
 }
 
 // ─ Initialiser le champ droit d'adhésion dans le modal
@@ -5750,7 +5801,8 @@ function saveMember(){
 
   const droitPaye = !!(document.getElementById('m-droit-paye')?.checked);
   const droitMontant = droitPaye ? (branding.droitAdhesion||0) : 0;
-  const extraFields = {email, naissance, situation, ville, enfants, droitPaye, droitMontant};
+  const regleCotisation = document.getElementById('m-regle-cotisation')?.value || 'defaut';
+  const extraFields = {email, naissance, situation, ville, enfants, droitPaye, droitMontant, regleCotisation};
 
   if(idx===-1){
     const maxNum = members.length > 0 ? Math.max(...members.map(m=>Number(m.num)||0)) : 0;
@@ -9216,11 +9268,15 @@ function genererBilanAG(){
   const soldeDisponible     = solde - resteARembourser;
 
   // Vérification cohérence comptes
-  const _soldeTreso = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
-  const _soldeNet   = soldeDisponible;
-  const _ecart      = _soldeTreso - _soldeNet;
-  const _ecartAbs   = Math.abs(_ecart);
-  const _isOk       = _ecartAbs < 1;
+  // On compare le SOLDE DE LA PÉRIODE (avant déduction prêts) avec le Solde Comptes & Trésorerie
+  // Ces deux grandeurs doivent s'équilibrer : si les prêts ont été débités des comptes,
+  // le solde des comptes = ce qui reste après toutes opérations (y compris décaissement prêts)
+  // Donc la bonne comparaison est : Solde période vs Solde Comptes
+  const _soldeTreso  = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
+  const _soldeRef    = solde; // Solde de la période AVANT déduction des prêts
+  const _ecart       = Math.abs(_soldeTreso - _soldeRef); // Différence absolue
+  const _ecartSigne  = _soldeTreso - _soldeRef; // Signé pour les pistes
+  const _isOk        = _ecart < 1;
   const _dateRef    = dateFinStr || (annee+'-12-31');
   const _dateRefFmt = _dateRef ? new Date(_dateRef).toLocaleDateString('fr-FR') : String(annee);
 
@@ -9265,20 +9321,48 @@ function genererBilanAG(){
   }
   htmlBilan += '</div>';
   // Vérification cohérence
-  htmlBilan += '<div style="margin-top:8px;background:'+(_isOk?'#F0FDF4':'#FFFBEB')+';border:1.5px solid '+(_isOk?'#BBF7D0':'#F59E0B')+';border-radius:10px;padding:14px 20px">';
-  htmlBilan += '<div style="font-size:12px;font-weight:700;color:'+(_isOk?'#166534':'#92400E')+';margin-bottom:10px">'+(_isOk?'✅':'⚠️')+' VÉRIFICATION — COHÉRENCE DES COMPTES</div>';
-  htmlBilan += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px"><span style="color:var(--gray-600)">Solde disponible net (Rapport Bilan)</span><span style="font-family:var(--mono);font-weight:600;color:#4C1D95">'+fmt(_soldeNet)+' FCFA</span></div>';
-  htmlBilan += '<div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;padding-bottom:10px;border-bottom:1px dashed '+(_isOk?'#BBF7D0':'#FCD34D')+'"><span style="color:var(--gray-600)">Solde réel Comptes & Trésorerie ('+comptes.filter(function(c){return c.actif;}).length+' compte(s))</span><span style="font-family:var(--mono);font-weight:600;color:#1D4ED8">'+fmt(_soldeTreso)+' FCFA</span></div>';
+  var _nbComptes = comptes.filter(function(c){return c.actif;}).length;
+  var _detailComptes = comptes.filter(function(cp){return cp.actif;}).map(function(cp){return cp.nom+' : '+fmt(getCompteSolde(cp.id))+' FCFA';}).join(' · ');
+  var _soldeRefSign = _soldeRef>=0?'+':'';
+  var _tresoBg   = _isOk ? '#F0FDF4' : '#FFFBEB';
+  var _tresoBdr  = _isOk ? '#BBF7D0' : '#F59E0B';
+  var _titreColor= _isOk ? '#166534' : '#92400E';
+  htmlBilan += '<div style="margin-top:8px;background:'+_tresoBg+';border:1.5px solid '+_tresoBdr+';border-radius:10px;padding:14px 20px">';
+  htmlBilan += '<div style="font-size:12px;font-weight:700;color:'+_titreColor+';margin-bottom:10px">'+(_isOk?'✅':'⚠️')+' VÉRIFICATION — COHÉRENCE DES COMPTES</div>';
+  // Ligne 1 : Solde de la période (référence bilan)
+  htmlBilan += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">';
+  htmlBilan += '<span style="color:var(--gray-600)">Solde de la période (Rapport Bilan)</span>';
+  htmlBilan += '<span style="font-family:var(--mono);font-weight:600;color:'+(_soldeRef>=0?'#166534':'#DC2626')+'">'+_soldeRefSign+fmt(_soldeRef)+' FCFA</span></div>';
+  // Ligne 2 : Solde Comptes & Trésorerie
+  htmlBilan += '<div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;padding-bottom:10px;border-bottom:1px dashed '+(_isOk?'#BBF7D0':'#FCD34D')+'">';
+  htmlBilan += '<span style="color:var(--gray-600)">Solde réel Comptes & Trésorerie ('+_nbComptes+' compte(s))</span>';
+  htmlBilan += '<span style="font-family:var(--mono);font-weight:600;color:#1D4ED8">'+(_soldeTreso>=0?'+':'')+fmt(_soldeTreso)+' FCFA</span></div>';
   if(_isOk){
-    htmlBilan += '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#166534"><span>✅</span><span>Comptes équilibrés — Aucun écart détecté</span></div>';
+    htmlBilan += '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#166534">✅ Comptes équilibrés — Aucun écart détecté</div>';
   } else {
-    htmlBilan += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><div style="font-size:13px;font-weight:700;color:#92400E">ÉCART DÉTECTÉ</div><div style="font-size:11px;color:#78350F">Différence entre le bilan et les comptes</div></div>';
-    htmlBilan += '<div style="font-size:20px;font-weight:800;font-family:var(--mono);color:'+(_ecart>0?'#16A34A':'#DC2626')+'">'+(_ecart>0?'+':'')+fmt(_ecart)+' FCFA</div></div>';
-    htmlBilan += '<div style="background:#FEF3C7;border-radius:6px;padding:8px 12px;font-size:11px;color:#78350F">'+(_ecart>0?'📌 Les Comptes affichent '+fmt(_ecartAbs)+' FCFA de plus que le bilan.':'📌 Le Bilan affiche '+fmt(_ecartAbs)+' FCFA de plus. Vérifiez que chaque opération est bien liée à un compte.')+'</div>';
+    // Écart = différence absolue entre les deux (toujours positif pour l'affichage)
+    htmlBilan += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
+    htmlBilan += '<div><div style="font-size:13px;font-weight:700;color:#92400E">ÉCART ENTRE LES DEUX SOLDES</div>';
+    htmlBilan += '<div style="font-size:11px;color:#78350F">Valeur absolue |Comptes − Solde période|</div></div>';
+    htmlBilan += '<div style="font-size:22px;font-weight:800;font-family:var(--mono);color:#DC2626">'+fmt(_ecart)+' FCFA</div></div>';
+    // Pistes de solutions
+    htmlBilan += '<div style="background:#FEF3C7;border-radius:8px;padding:10px 14px;font-size:11px;color:#78350F;line-height:1.9">';
+    htmlBilan += '<div style="font-weight:700;margin-bottom:6px">💡 Pistes pour corriger cet écart :</div>';
+    if(_ecartSigne > 0){
+      htmlBilan += '1️⃣ Vérifiez les <strong>soldes initiaux</strong> de vos comptes — un solde de départ trop élevé gonfle le total Comptes.<br>';
+      htmlBilan += '2️⃣ Vérifiez si des <strong>ajustements manuels</strong> ont été faits dans les comptes sans contrepartie dans le bilan.<br>';
+      htmlBilan += '3️⃣ Le <strong>Solde excédentaire N-1</strong> dans le bilan est-il à jour ? S\'il est sous-évalué, le bilan sera plus bas que les comptes.<br>';
+      htmlBilan += '4️⃣ Des <strong>remboursements de prêts</strong> ont-ils été encaissés dans les comptes sans être saisis dans le module Prêts ?';
+    } else {
+      htmlBilan += '1️⃣ Vérifiez que chaque <strong>cotisation, don, dépense, assistance</strong> est bien liée à un compte lors de l\'enregistrement.<br>';
+      htmlBilan += '2️⃣ Des <strong>opérations passées</strong> ont peut-être été saisies avant l\'activation du module Comptes & Trésorerie.<br>';
+      htmlBilan += '3️⃣ Vérifiez les <strong>décaissements de prêts</strong> — sont-ils bien déduits des comptes au moment de l\'octroi ?';
+    }
+    htmlBilan += '</div>';
   }
-  htmlBilan += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid '+(_isOk?'#BBF7D0':'#FCD34D')+';font-size:10px;color:#9CA3AF">';
-  htmlBilan += comptes.filter(function(cp){return cp.actif;}).map(function(cp){return cp.nom+' : '+fmt(getCompteSolde(cp.id))+' FCFA';}).join(' &nbsp;·&nbsp; ');
-  htmlBilan += '</div></div>';
+  // Détail comptes
+  htmlBilan += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid '+(_isOk?'#BBF7D0':'#FCD34D')+';font-size:10px;color:#9CA3AF">'+_detailComptes+'</div>';
+  htmlBilan += '</div>';
   elBilan.innerHTML = htmlBilan;
 
   // --- 2. SITUATION DES PRÊTS ---
@@ -13459,6 +13543,8 @@ function initBrandingPage(){
     document.getElementById('brand-droit-adhesion').value = branding.droitAdhesion||0;
   if(document.getElementById('brand-solde-precedent'))
     document.getElementById('brand-solde-precedent').value = branding.soldePrecedent||0;
+  if(document.getElementById('brand-regle-cotisation'))
+    document.getElementById('brand-regle-cotisation').value = branding.regleCotisation||'mois_adhesion';
   if(document.getElementById('brand-hsms-worker'))   document.getElementById('brand-hsms-worker').value   = branding.hsmsWorkerUrl||'';
   if(document.getElementById('brand-hsms-token'))    document.getElementById('brand-hsms-token').value    = branding.hsmsToken||'';
   if(document.getElementById('brand-hsms-email'))    document.getElementById('brand-hsms-email').value    = branding.hsmsEmail||'';
@@ -13638,6 +13724,7 @@ function saveBranding(){
   branding.hsmsClientId     = document.getElementById('brand-hsms-clientid')?.value.trim()||'';
   branding.hsmsClientSecret = document.getElementById('brand-hsms-secret')?.value.trim()||'';
   branding.debutMois= parseInt(document.getElementById('brand-mois-debut')?.value||'2');
+  branding.regleCotisation = document.getElementById('brand-regle-cotisation')?.value || 'mois_adhesion';
   const newUrl = document.getElementById('brand-url').value.trim();
   if(newUrl) branding.url = newUrl;
 
