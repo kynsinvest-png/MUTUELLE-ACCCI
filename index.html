@@ -4980,12 +4980,21 @@ function buildSidebar(role){
     if(id==='page-config-modules'){
       return currentAdmin?.role==='superadmin' && currentAdmin?.login==='admin';
     }
-    // Vérifier modules masqués par la config (sauf super admin)
-    if(r!=='superadmin' && _hiddenAdminModules.includes(id)) return false;
-    if(r==='superadmin'||r==='full') return true;
-    if(r==='restricted') return id==='page-dashboard'||(allowed||[]).includes(id);
-    if(r==='readonly') return id!=='page-admins';
-    return id==='page-dashboard';
+    // page-dashboard et page-admins : toujours accessibles au superadmin
+    if(id==='page-dashboard') return true;
+    if(id==='page-admins') return r==='superadmin';
+
+    // Superadmin voit tout (il gère lui-même la config)
+    if(r==='superadmin') return true;
+
+    // Tous les autres rôles respectent les modules masqués
+    if(_hiddenAdminModules.includes(id)) return false;
+
+    // Accès selon rôle
+    if(r==='full') return true;
+    if(r==='restricted') return (allowed||[]).includes(id);
+    if(r==='readonly') return true; // lecture seule mais voit tout
+    return false;
   }
   if(r!=='superadmin'){
     // superadmin seul peut voir Gestion Admins
@@ -5054,8 +5063,8 @@ function appendItem(container, item, indent){
 }
 
 function showPage(id){
-  // Vérifier que le module n'est pas masqué par la config
-  if(currentRole==='admin' && _hiddenAdminModules.includes(id)){
+  // Vérifier que le module n'est pas masqué par la config (non superadmin uniquement)
+  if(currentRole==='admin' && currentAdmin?.role!=='superadmin' && _hiddenAdminModules.includes(id)){
     _showDocToast('⚠️ Ce module est désactivé dans la configuration.');
     return;
   }
@@ -7340,7 +7349,7 @@ function viewDoc(i){
   const fileLink = d.fileUrl || (d.fichier?.dataUrl ? null : null);
 
   if(!d.fichier && !d.fileUrl){
-    customConfirm('Fichier non disponible. Le document n\'a peut-être pas encore été téléchargé depuis Sheets.','Info','OK').then(()=>{});
+    _showDocToast('⚠️ Fichier non disponible. Vérifiez que le document a bien été uploadé.');
     return;
   }
   documents[i].vues = (d.vues||0)+1;
@@ -7367,14 +7376,33 @@ function viewDoc(i){
 
   // Si fileUrl Google Drive disponible et pas de prévisualisation locale
   if(!previewHtml && d.fileUrl){
-    previewHtml = `<div style="text-align:center;padding:28px;background:var(--gray-100);border-radius:8px;margin-top:12px">
-      <div style="font-size:48px;margin-bottom:10px">${fi.icon}</div>
-      <div style="font-size:14px;font-weight:600;color:var(--navy);margin-bottom:6px">${d.fileName||d.titre}</div>
-      <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px">Fichier stocké sur Google Drive</div>
-      <a href="${d.fileUrl}" target="_blank" rel="noopener" class="btn btn-primary" style="text-decoration:none">
-        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        Ouvrir / Télécharger
-      </a>
+    // Extraire le fileId du lien Drive (format /file/d/ID/view ou uc?id=ID)
+    let fileId = '';
+    const matchView = d.fileUrl.match(/\/file\/d\/([^/]+)/);
+    const matchUc   = d.fileUrl.match(/[?&]id=([^&]+)/);
+    if(matchView) fileId = matchView[1];
+    else if(matchUc) fileId = matchUc[1];
+
+    const previewUrl  = fileId ? `https://drive.google.com/file/d/${fileId}/preview` : d.fileUrl;
+    const downloadUrl = fileId ? `https://drive.google.com/uc?export=download&id=${fileId}` : d.fileUrl;
+
+    previewHtml = `<div style="margin-top:12px">
+      <iframe src="${previewUrl}"
+        style="width:100%;height:500px;border:none;border-radius:8px"
+        allow="autoplay" loading="lazy">
+      </iframe>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <a href="${d.fileUrl}" target="_blank" rel="noopener"
+          class="btn btn-primary" style="text-decoration:none;flex:1;justify-content:center">
+          <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Ouvrir dans Drive
+        </a>
+        <a href="${downloadUrl}" target="_blank" rel="noopener"
+          class="btn btn-ghost" style="text-decoration:none;flex:1;justify-content:center">
+          <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Télécharger
+        </a>
+      </div>
     </div>`;
   }
 
@@ -10715,23 +10743,24 @@ document.addEventListener('click',e=>{
 
 // Modules configurables ADMIN (id, label, groupe)
 const CONFIGURABLE_ADMIN_MODULES = [
-  {id:'page-cotisations',   label:'💰 Cotisations mensuelles',       groupe:'Finances'},
-  {id:'page-exc-admin',     label:'📋 Cotisations exceptionnelles',   groupe:'Finances'},
-  {id:'page-assist-admin',  label:'🤝 Assistances',                   groupe:'Finances'},
-  {id:'page-depenses',      label:'💸 Dépenses',                      groupe:'Finances'},
-  {id:'page-dons',          label:'🎁 Dons & Revenus',                groupe:'Finances'},
-  {id:'page-prets-admin',   label:'🏦 Prêts membres',                 groupe:'Finances'},
-  {id:'page-projets-admin', label:'🏗️ Projets',                      groupe:'Finances'},
-  {id:'page-membres',       label:'👥 Membres',                       groupe:'Membres'},
-  {id:'page-codes',         label:'🔑 Codes membres',                 groupe:'Membres'},
-  {id:'page-bureau-admin',  label:'🏛️ Bureau de la mutuelle',         groupe:'Membres'},
-  {id:'page-bilan-ag',      label:'📊 Rapport Bilan AG',              groupe:'Gestion'},
-  {id:'page-rapports',      label:'📈 Rapports & Bilans',             groupe:'Gestion'},
-  {id:'page-docs-admin',    label:'📄 Documents',                     groupe:'Gestion'},
-  {id:'page-patrimoine-admin',label:'🏛️ Patrimoine',                  groupe:'Gestion'},
-  {id:'page-import',        label:'📥 Import & Historique',           groupe:'Gestion'},
-  {id:'page-banniere',      label:'📢 Message Bannière',              groupe:'Communication'},
-  {id:'page-sms-admin',     label:'💬 SMS Groupé',                    groupe:'Communication'},
+  {id:'page-comptes',       label:'🏧 Comptes & Trésorerie',           groupe:'Finances'},
+  {id:'page-cotisations',   label:'💰 Cotisations mensuelles',         groupe:'Finances'},
+  {id:'page-exc-admin',     label:'📋 Cotisations exceptionnelles',     groupe:'Finances'},
+  {id:'page-assist-admin',  label:'🤝 Assistances',                     groupe:'Finances'},
+  {id:'page-depenses',      label:'💸 Dépenses',                        groupe:'Finances'},
+  {id:'page-dons',          label:'🎁 Dons & Revenus',                  groupe:'Finances'},
+  {id:'page-prets-admin',   label:'🏦 Prêts membres',                   groupe:'Finances'},
+  {id:'page-projets-admin', label:'🏗️ Projets',                        groupe:'Finances'},
+  {id:'page-membres',       label:'👥 Membres',                         groupe:'Membres'},
+  {id:'page-codes',         label:'🔑 Codes membres',                   groupe:'Membres'},
+  {id:'page-bureau-admin',  label:'🏛️ Bureau de la mutuelle',           groupe:'Membres'},
+  {id:'page-bilan-ag',      label:'📊 Rapport Bilan AG',                groupe:'Gestion'},
+  {id:'page-rapports',      label:'📈 Rapports & Bilans',               groupe:'Gestion'},
+  {id:'page-docs-admin',    label:'📄 Documents',                       groupe:'Gestion'},
+  {id:'page-patrimoine-admin',label:'🏛️ Patrimoine',                    groupe:'Gestion'},
+  {id:'page-import',        label:'📥 Import & Historique',             groupe:'Gestion'},
+  {id:'page-banniere',      label:'📢 Message Bannière',                groupe:'Communication'},
+  {id:'page-sms-admin',     label:'💬 SMS Groupé',                      groupe:'Communication'},
 ];
 
 // Modules configurables MEMBRE
@@ -16452,10 +16481,10 @@ function showReadonlyBanner(){
           <div class="field" style="flex:1;margin:0"><label>Date de fin</label><input type="date" id="rpt-date-fin"/></div>
         </div>
         <div class="field field-full" style="margin-top:4px">
-          <label>Format d\'export</label>
+          <label>Format d'export</label>
           <div style="display:flex;gap:8px">
-            <button type="button" class="btn btn-sm" style="background:#DC2626;color:#fff;flex:1" onclick="genererRapportTresorerie(\'pdf\')">📄 Exporter PDF</button>
-            <button type="button" class="btn btn-sm" style="background:#166534;color:#fff;flex:1" onclick="genererRapportTresorerie(\'excel\')">📊 Exporter Excel</button>
+            <button type="button" class="btn btn-sm" style="background:#DC2626;color:#fff;flex:1" onclick="genererRapportTresorerie('pdf')">📄 Exporter PDF</button>
+            <button type="button" class="btn btn-sm" style="background:#166534;color:#fff;flex:1" onclick="genererRapportTresorerie('excel')">📊 Exporter Excel</button>
           </div>
         </div>
       </div>
