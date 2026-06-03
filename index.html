@@ -8190,6 +8190,8 @@ function openAddPret(){
   document.getElementById('pret-preview').style.display='none';
   document.getElementById('pret-amort-preview').style.display='none';
   document.getElementById('pret-err').style.display='none';
+  // Mettre à jour le select compte AVANT d'ouvrir le modal
+  updateComptesSelects();
   openModal('modal-pret');
 }
 
@@ -8210,6 +8212,9 @@ function openEditPret(id){
   if(m) selectPretMb(m.code);
   calcAmortissement();
   document.getElementById('pret-err').style.display='none';
+  updateComptesSelects();
+  const pretCptEl=document.getElementById('pret-compte');
+  if(pretCptEl&&p.compteId) pretCptEl.value=p.compteId;
   openModal('modal-pret');
 }
 
@@ -8250,6 +8255,8 @@ function savePret(){
       libelle:'Prêt octroyé — '+(record.memberNom||record.memberCode)+' — '+(record.objet||''),
       source:'pret_octroye', sourceId:record.id, date:record.date});
   }
+  // Sauvegarder compteId dans le prêt pour affichage futur
+  if(pretCpt) record.compteId = pretCpt;
   closeModal('modal-pret');
   renderPretsAdmin();
   _showDocToast('✅ Prêt enregistré avec succès');
@@ -8535,12 +8542,15 @@ function renderPretsAdmin(){
 
 // ── Supprimer prêt ──
 function deletePret(id){
-  if(!confirm('Supprimer ce prêt et tous ses remboursements ?')) return;
-  prets=prets.filter(p=>p.id!==id);
-  remboursements=remboursements.filter(r=>r.pretId!==id);
-  dbPost('deletePret',{id});
-  renderPretsAdmin();
-  _showDocToast('✅ Prêt supprimé');
+  customConfirm('Supprimer ce prêt et tous ses remboursements associés ?','Supprimer le prêt','Supprimer').then(ok=>{
+    if(!ok) return;
+    prets=prets.filter(p=>p.id!==id);
+    remboursements=remboursements.filter(r=>r.pretId!==id);
+    dbPost('deletePret',{id});
+    dbPost('deletePretRemboursements',{pretId:id});
+    renderPretsAdmin();
+    _showDocToast('✅ Prêt supprimé');
+  });
 }
 
 // ── Render membre ──
