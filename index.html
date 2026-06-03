@@ -2247,6 +2247,14 @@ html, body {
                 <div class="field">
                   <label>🏦 Solde excédentaire exercice précédent (FCFA)</label>
                   <input type="number" id="brand-solde-precedent" min="0" step="1000" placeholder="Ex: 500000"/>
+                </div>
+                <div class="field field-full">
+                  <label>🗓️ Règle de démarrage des cotisations</label>
+                  <select id="brand-regle-cotisation">
+                    <option value="mois_adhesion">Mois d'adhésion = 1er mois de cotisation (défaut)</option>
+                    <option value="mois_suivant">Mois suivant l'adhésion = 1er mois de cotisation</option>
+                  </select>
+                  <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Cette règle s'applique uniquement l'année d'adhésion. Elle peut être surchargée individuellement par membre.</div>
                   <span style="font-size:11px;color:var(--gray-500);margin-top:3px;display:block">Montant reporté des exercices antérieurs — inclus dans le solde trésorerie.</span>
                 </div>
 
@@ -3211,6 +3219,15 @@ html, body {
         <label>Date d'adhésion</label>
         <input type="date" id="m-date" value="2026-01-01"/>
       </div>
+      <div class="field">
+        <label>🗓️ Démarrage des cotisations</label>
+        <select id="m-regle-cotisation">
+          <option value="defaut">Appliquer la règle de la mutuelle</option>
+          <option value="mois_adhesion">Mois d'adhésion (forcer)</option>
+          <option value="mois_suivant">Mois suivant l'adhésion (forcer)</option>
+        </select>
+        <div id="m-regle-preview" style="font-size:11px;color:var(--blue);margin-top:4px"></div>
+      </div>
     </div>
 
     <!-- SLIP PREVIEW -->
@@ -4104,6 +4121,8 @@ async function loadFromSheets(){
         modulesConfig = {...modulesConfig, ...mc};
         lsSet('mc_modules_config', JSON.stringify(modulesConfig));
         applyModulesConfig();
+        // Reconstruire la sidebar si l'utilisateur est déjà connecté
+        if(currentRole) buildSidebar(currentRole);
       }catch(e){}
     }
     // Sauvegarder dans localStorage (logo inclus — pour les prochains chargements)
@@ -4250,20 +4269,46 @@ function getMemberStartMonthIdx(m){
 }
 
 // Mois actifs pour un membre dans une année donnée
+// ════════════════════════════════════════════════════════
+// RÈGLE DE DÉMARRAGE DES COTISATIONS
+// Global (branding.regleCotisation) + exception individuelle (m.regleCotisation)
+// Valeurs : 'mois_adhesion' (défaut) | 'mois_suivant'
+// ════════════════════════════════════════════════════════
+function getRegleCotisation(m){
+  // 1. Exception individuelle sur le membre (priorité maximale)
+  if(m.regleCotisation && m.regleCotisation !== 'defaut') return m.regleCotisation;
+  // 2. Règle globale de la mutuelle (Personnalisation)
+  if(branding.regleCotisation) return branding.regleCotisation;
+  // 3. Défaut : mois d'adhésion
+  return 'mois_adhesion';
+}
+
 function getActiveMoisForMember(m, annee){
   const yr = String(annee || _anneeActive);
   const cfg = ANNEE_CONFIG[yr] || {debutIdx: 0};
-  const anneeStart = cfg.debutIdx; // mois de début configuré pour cette année
+  const anneeStart = cfg.debutIdx;
 
   // La date d'adhésion ne s'applique QUE pour l'année d'adhésion
-  // Pour toutes les années suivantes, on part du mois de début de l'année
+  // Pour toutes les années suivantes → mois de début de l'année
   let memberStart = 0;
   if(m.date){
     const d = new Date(m.date);
     if(!isNaN(d)){
       const adhesionYear = String(d.getFullYear());
-      // Appliquer la date d'adhésion uniquement si c'est la même année
-      if(adhesionYear === yr) memberStart = d.getMonth();
+      if(adhesionYear === yr){
+        const moisAdhesion = d.getMonth(); // 0=Jan, 11=Dec
+        const regle = getRegleCotisation(m);
+        if(regle === 'mois_suivant'){
+          // Démarre le mois SUIVANT l'adhésion
+          memberStart = moisAdhesion + 1;
+          // Si adhésion en Décembre → commence en Janvier de l'année suivante
+          // On retourne tableau vide pour cette année
+          if(memberStart > 11) return [];
+        } else {
+          // 'mois_adhesion' — comportement actuel
+          memberStart = moisAdhesion;
+        }
+      }
     }
   }
 
@@ -4733,6 +4778,9 @@ async function adminLogin(){
 function enterApp(role){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app-shell').style.display='flex';
+  // Toujours charger et appliquer la config modules AVANT de construire la sidebar
+  loadModulesConfig();
+  applyModulesConfig();
   buildSidebar(role);
   if(role==='member'){
     showPage('page-member');
@@ -5728,6 +5776,7 @@ function saveMember(){
   renderMembersTable();
   renderAdminDashboard();
   renderCodesTable();
+  applyModulesConfig();
   buildSidebar('admin');
 }
 
@@ -5769,6 +5818,7 @@ function confirmDeactivate(){
   closeModal('modal-deactivate');
   renderMembersTable();
   renderAdminDashboard();
+  applyModulesConfig();
   buildSidebar('admin');
 }
 
@@ -5786,6 +5836,7 @@ function confirmReactivate(){
   closeModal('modal-reactivate');
   renderMembersTable();
   renderAdminDashboard();
+  applyModulesConfig();
   buildSidebar('admin');
 }
 
