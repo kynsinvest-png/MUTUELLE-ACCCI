@@ -8016,6 +8016,11 @@ function getDateEcheance(dateDeblocage, numEch, periodicite){
   return d.toISOString().split('T')[0];
 }
 
+// Total capital déjà remboursé = Capital initial − Capital restant
+function getPretTotalCapitalRembourse(pret){
+  return Math.max(0, Number(pret.montant||0) - getPretCapitalRestant(pret));
+}
+
 function getPretStatut(pret){
   if(pret.statut==='solde') return 'solde';
   const rows = getAmortissement(pret);
@@ -8042,44 +8047,37 @@ function getPretCapitalRestant(pret){
   const rembs = remboursements.filter(r=>String(r.pretId)===pretId);
   if(!rembs.length) return montant;
 
-  // Méthode 1 : utiliser capitalRembourse si disponible ET non nul pour au moins un remboursement
-  const capsValides = rembs.filter(r=>Number(r.capitalRembourse)>0);
-  if(capsValides.length > 0){
-    // Cas mixte : certains ont capitalRembourse, d'autres non
-    // Pour ceux sans capitalRembourse → recalculer depuis le tableau d'amortissement
-    const rows = getAmortissement(pret);
-    let totalCap = 0;
-    rembs.forEach(r=>{
-      const cap = Number(r.capitalRembourse);
-      if(cap > 0){
-        totalCap += cap;
-      } else {
-        // Pas de capitalRembourse → retrouver dans le tableau d'amortissement
-        const row = rows.find(x=>x.n===Number(r.numEcheance));
-        if(row){
-          totalCap += Number(row.capital||0);
-        } else {
-          // Dernier recours : déduire le montant remboursé (moins précis mais mieux que 0)
-          totalCap += Number(r.montant||0);
-        }
-      }
-    });
-    return Math.max(0, montant - totalCap);
-  }
-
-  // Méthode 2 : aucun capitalRembourse → recalculer depuis le tableau d'amortissement
+  // Recalculer depuis le tableau d'amortissement pour chaque remboursement
   const rows = getAmortissement(pret);
-  let totalCap = 0;
+
+  let totalCapitalRembourse = 0;
   rembs.forEach(r=>{
-    const row = rows.find(x=>x.n===Number(r.numEcheance));
-    if(row){
-      totalCap += Number(row.capital||0);
-    } else {
-      // Pas de correspondance d'échéance → utiliser r.montant comme approximation
-      totalCap += Number(r.montant||0);
+    // 1. Utiliser capitalRembourse si valide
+    const capField = Number(r.capitalRembourse);
+    if(capField > 0){
+      totalCapitalRembourse += capField;
+      return;
     }
+    // 2. Retrouver dans le tableau d'amortissement par numéro d'échéance
+    const row = rows.find(x=>x.n===Number(r.numEcheance));
+    if(row && Number(row.capital) > 0){
+      totalCapitalRembourse += Number(row.capital);
+      return;
+    }
+    // 3. Dernier recours : si taux = 0, tout le montant est du capital
+    if(!Number(pret.taux)){
+      totalCapitalRembourse += Number(r.montant||0);
+      return;
+    }
+    // 4. Calculer le capital à partir du montant remboursé et du taux
+    // capital = montant_remboursé - intérêts
+    // On ne peut pas calculer les intérêts exactement sans connaître le solde
+    // → utiliser le montant directement (approximation)
+    totalCapitalRembourse += Number(r.montant||0);
   });
-  return Math.max(0, montant - totalCap);
+
+  // Capital restant = Capital initial - Total capital remboursé
+  return Math.max(0, montant - totalCapitalRembourse);
 }
 
 // ── Recherche membre prêt ──
@@ -8462,14 +8460,17 @@ function renderPretsAdmin(){
   }).sort((a,b)=>new Date(b.dateCreation||b.date)-new Date(a.dateCreation||a.date));
 
   // Stats
-  const totalCapital=prets.filter(p=>getPretStatut(p)!=='solde').reduce((s,p)=>s+Number(p.montant),0);
+  const pretsActifs = prets.filter(p=>getPretStatut(p)!=='solde');
+  const totalCapital=pretsActifs.reduce((s,p)=>s+Number(p.montant),0);
+  const totalCapitalRestant=pretsActifs.reduce((s,p)=>s+getPretCapitalRestant(p),0);
   const totalRembourse=remboursements.reduce((s,r)=>s+Number(r.montant),0);
   const nbEnCours=prets.filter(p=>getPretStatut(p)==='en_cours').length;
   const nbRetard=prets.filter(p=>getPretStatut(p)==='retard').length;
   const nbSoldes=prets.filter(p=>getPretStatut(p)==='solde').length;
   document.getElementById('prets-stats').innerHTML=`
-    <div class="stat-card blue"><div class="stat-label">Capital prêté actif</div><div class="stat-value">${fmtK(totalCapital)} FCFA</div><div class="stat-sub">${fmt(totalCapital)} FCFA</div></div>
+    <div class="stat-card blue"><div class="stat-label">Capital prêté actif</div><div class="stat-value">${fmtK(totalCapital)} FCFA</div><div class="stat-sub">${pretsActifs.length} prêt(s) en cours</div></div>
     <div class="stat-card green"><div class="stat-label">Total remboursé</div><div class="stat-value">${fmtK(totalRembourse)} FCFA</div><div class="stat-sub">${fmt(totalRembourse)} FCFA</div></div>
+    <div class="stat-card" style="background:#F5F3FF;border:1px solid #DDD6FE"><div class="stat-label" style="color:#7C3AED">Capital restant à rembourser</div><div class="stat-value" style="color:#DC2626">${fmtK(totalCapitalRestant)} FCFA</div><div class="stat-sub" style="color:#7C3AED">${fmt(totalCapitalRestant)} FCFA</div></div>
     <div class="stat-card"><div class="stat-label">En cours</div><div class="stat-value">${nbEnCours}</div><div class="stat-sub">prêt(s)</div></div>
     <div class="stat-card" style="border-left:3px solid #DC2626"><div class="stat-label">En retard</div><div class="stat-value" style="color:#DC2626">${nbRetard}</div><div class="stat-sub">prêt(s)</div></div>
     <div class="stat-card"><div class="stat-label">Soldés</div><div class="stat-value" style="color:#6B7280">${nbSoldes}</div><div class="stat-sub">prêt(s)</div></div>`;
