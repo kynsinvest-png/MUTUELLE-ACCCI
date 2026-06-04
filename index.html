@@ -1249,7 +1249,7 @@ html, body {
       <div class="page" id="page-codes">
         <div class="admin-header">
           <div class="admin-title">Codes confidentiels membres</div>
-          <button class="btn btn-ghost btn-sm" onclick="window.print()">🖨️ Imprimer</button>
+          <button class="btn btn-ghost btn-sm" onclick="printCodesPage()">🖨️ Imprimer</button>
         </div>
         <div class="card">
           <div class="alert alert-info" style="display:flex;margin-bottom:14px">
@@ -5026,7 +5026,7 @@ function buildSidebar(role){
   function isAllowed(id){
     // page-config-modules : EXCLUSIVEMENT login 'admin' + role superadmin
     if(id==='page-config-modules'){
-      return currentAdmin?.role==='superadmin' && currentAdmin?.login==='admin';
+      return currentAdmin?.role==='superadmin';
     }
     // page-dashboard et page-admins : toujours accessibles au superadmin
     if(id==='page-dashboard') return true;
@@ -9273,10 +9273,12 @@ function genererBilanAG(){
   // le solde des comptes = ce qui reste après toutes opérations (y compris décaissement prêts)
   // Donc la bonne comparaison est : Solde période vs Solde Comptes
   const _soldeTreso  = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
-  const _soldeRef    = solde; // Solde de la période AVANT déduction des prêts
-  const _ecart       = Math.abs(_soldeTreso - _soldeRef); // Différence absolue
-  const _ecartSigne  = _soldeTreso - _soldeRef; // Signé pour les pistes
-  const _isOk        = _ecart < 1;
+  const _soldeRef    = solde;
+  // Écart = |Comptes| − |Solde période| (valeur absolue de chaque terme, puis différence)
+  const _ecart       = Math.abs(_soldeTreso) - Math.abs(_soldeRef);
+  const _ecartAbs    = Math.abs(_ecart);
+  const _ecartSigne  = _ecart; // pour les pistes
+  const _isOk        = _ecartAbs < 1;
   const _dateRef    = dateFinStr || (annee+'-12-31');
   const _dateRefFmt = _dateRef ? new Date(_dateRef).toLocaleDateString('fr-FR') : String(annee);
 
@@ -9344,7 +9346,7 @@ function genererBilanAG(){
     htmlBilan += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
     htmlBilan += '<div><div style="font-size:13px;font-weight:700;color:#92400E">ÉCART ENTRE LES DEUX SOLDES</div>';
     htmlBilan += '<div style="font-size:11px;color:#78350F">Valeur absolue |Comptes − Solde période|</div></div>';
-    htmlBilan += '<div style="font-size:22px;font-weight:800;font-family:var(--mono);color:#DC2626">'+fmt(_ecart)+' FCFA</div></div>';
+    htmlBilan += '<div style="font-size:22px;font-weight:800;font-family:var(--mono);color:#DC2626">'+fmt(_ecartAbs)+' FCFA</div></div>';
     // Pistes de solutions
     htmlBilan += '<div style="background:#FEF3C7;border-radius:8px;padding:10px 14px;font-size:11px;color:#78350F;line-height:1.9">';
     htmlBilan += '<div style="font-weight:700;margin-bottom:6px">💡 Pistes pour corriger cet écart :</div>';
@@ -11530,876 +11532,152 @@ ${sortis.length?`<div class="stitle" style="color:#991B1B;border-color:#991B1B;m
 }
 
 function exportPDF(type){
-  const moisSel = document.getElementById('export-month-select').value;
+  const moisSel    = document.getElementById('export-month-select').value;
   const anneeActive = _anneeActive || '2026';
-
   let liste = members.filter(m=>m.actif);
-
   if(type !== 'tous'){
-    if(!moisSel){
-      customConfirm('Veuillez sélectionner un mois pour filtrer les membres à jour / non à jour.','Sélectionner un mois','OK').then(()=>{});
-      return;
-    }
+    if(!moisSel){ _showDocToast('⚠️ Sélectionnez un mois pour filtrer.'); return; }
     liste = liste.filter(m=>{
       const paidList = getMoisPaidList(m, anneeActive);
       const ajour = paidList.includes(moisSel);
       return type==='ajour' ? ajour : !ajour;
     });
   }
+  if(!liste.length){ _showDocToast('Aucun membre pour ces critères.'); return; }
 
-  if(!liste.length){
-    customConfirm('Aucun membre dans cette liste pour les critères sélectionnés.','Liste vide','OK').then(()=>{});
-    return;
-  }
+  const now        = new Date().toLocaleDateString('fr-FR');
+  const moisLabel  = moisSel || ('Année '+anneeActive);
+  const typeLabel  = type==='ajour'?'✅ Membres À JOUR — '+moisLabel:type==='retard'?'⚠ Membres NON À JOUR — '+moisLabel:'📋 Liste complète des membres actifs';
+  const couleur    = branding.color || '#0F2544';
+  const nomMutuelle= branding.nom || 'MUTUELLE';
+  const slogan     = branding.slogan || '';
+  const logoHtml   = branding.logoUrl
+    ? '<img src="'+branding.logoUrl+'" style="width:44px;height:44px;object-fit:contain;border-radius:8px"/>'
+    : '<div style="width:44px;height:44px;background:'+couleur+';border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:22px">🛡️</div>';
 
-  const now = new Date().toLocaleDateString('fr-FR');
-  const moisLabel = moisSel || ('Année '+anneeActive);
-  const typeLabel = type==='ajour'
-    ? `✅ Membres À JOUR — ${moisLabel}`
-    : type==='retard'
-    ? `⚠ Membres NON À JOUR — ${moisLabel}`
-    : '📋 Liste complète des membres actifs';
-
-  const couleurTitre = branding.color || '#0F2544';
-  const couleurBadge = type==='ajour'?'#D1FAE5':type==='retard'?'#FEF3C7':'#D6E4F5';
-  const couleurBadgeTxt = type==='ajour'?'#065F46':type==='retard'?'#92400E':'#1F4E79';
-
-  // Logo : base64 ou emoji bouclier
-  const logoHtml = branding.logoUrl
-    ? `<img src="${branding.logoUrl}" style="width:48px;height:48px;object-fit:contain;border-radius:10px;display:block;margin-bottom:6px"/>`
-    : `<div style="width:48px;height:48px;background:${couleurTitre};border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:6px">🛡️</div>`;
-
-  const nomMutuelle = branding.nom || 'MUTUELLE 2026';
-  const sloganMutuelle = branding.slogan || '';
-
-  const lignes = liste.map((m,i)=>{
-    const mc = getMoisCouverts(m, anneeActive);
+  const lignes = liste.map(function(m,i){
+    const mc        = getMoisCouverts(m, anneeActive);
     const totalPaid = getTotalPaid(m, anneeActive);
-    const solde = Math.max(0, getSolde(m, anneeActive));
-    const paidList = getMoisPaidList(m, anneeActive);
-    const statutMois = moisSel
+    const solde     = Math.max(0, getSolde(m, anneeActive));
+    const paidList  = getMoisPaidList(m, anneeActive);
+    const statut    = moisSel
       ? (paidList.includes(moisSel)
-          ? `<span style="color:#1B6B3A;font-weight:700">✓ Payé</span>`
-          : `<span style="color:#B85C00;font-weight:700">⚠ Non payé</span>`)
-      : `${mc}/${getNbMoisDus(m, anneeActive)}`;
-    const bg = i%2===0?'#F8F9FA':'#FFFFFF';
-    return `<tr style="background:${bg}">
-      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;text-align:center;font-weight:600;color:#6B7280">${m.num}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;font-family:monospace;font-size:11px;color:#1F4E79;font-weight:700">${m.code}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;font-weight:600">${m.nom}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;color:#374151">${m.fonction||'—'}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;color:#374151">${m.service||'—'}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;font-family:monospace;font-size:11px">${m.tel||'—'}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;text-align:center">${statutMois}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;text-align:right;font-family:monospace">${totalPaid.toLocaleString('fr-FR')}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #E5E7EB;text-align:right;font-family:monospace;color:${solde>0?'#B85C00':'#1B6B3A'};font-weight:${solde>0?'700':'400'}">${solde>0?solde.toLocaleString('fr-FR')+' F':'✓ Soldé'}</td>
-    </tr>`;
+          ? '<span style="color:#1B6B3A;font-weight:700">✓ Payé</span>'
+          : '<span style="color:#B85C00;font-weight:700">⚠ Dû</span>')
+      : mc+'/'+getNbMoisDus(m,anneeActive);
+    var bg = i%2===0?'#F8F9FA':'#FFFFFF';
+    return '<tr style="background:'+bg+'">'
+      +'<td style="padding:6px 8px;text-align:center;color:#6B7280;font-weight:600">'+m.num+'</td>'
+      +'<td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#1F4E79;font-weight:700">'+m.code+'</td>'
+      +'<td style="padding:6px 8px;font-weight:600">'+((m.prenom?m.prenom+' ':'')+m.nom)+'</td>'
+      +'<td style="padding:6px 8px;color:#374151">'+( m.service||'—')+'</td>'
+      +'<td style="padding:6px 8px;font-family:monospace;font-size:11px">'+( m.tel||'—')+'</td>'
+      +'<td style="padding:6px 8px;text-align:center">'+statut+'</td>'
+      +'<td style="padding:6px 8px;text-align:right;font-family:monospace">'+totalPaid.toLocaleString('fr-FR')+' F</td>'
+      +'<td style="padding:6px 8px;text-align:right;font-family:monospace;color:'+(solde>0?'#B85C00':'#1B6B3A')+';font-weight:'+(solde>0?'700':'400')+'">'+( solde>0?solde.toLocaleString('fr-FR')+' F':'✓ À jour')+'</td>'
+      +'</tr>';
   }).join('');
 
-  const totalCollecte = liste.reduce((s,m)=>s+getTotalPaid(m, anneeActive),0);
-  const totalSolde    = liste.reduce((s,m)=>s+Math.max(0,getSolde(m, anneeActive)),0);
-  const nomFichier    = `${nomMutuelle.replace(/\s+/g,'_')}_membres_${type}_${moisSel||anneeActive}_${now.replace(/\//g,'-')}.html`;
+  const totalCollecte = liste.reduce(function(s,m){return s+getTotalPaid(m,anneeActive);},0);
+  const totalSolde    = liste.reduce(function(s,m){return s+Math.max(0,getSolde(m,anneeActive));},0);
 
-  const html = `<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<title>${nomMutuelle} — ${typeLabel}</title>
-<style>
-  @page { margin: 15mm 12mm; size: A4 landscape; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 12px; color: #111; }
-  .header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px; padding-bottom:12px; border-bottom:3px solid ${couleurTitre}; }
-  .header-brand { display:flex; align-items:center; gap:12px; }
-  .header-brand-text h1 { font-size:18px; color:${couleurTitre}; font-weight:700; margin-bottom:2px; }
-  .header-brand-text .slogan { font-size:11px; color:#777; }
-  .header-right { text-align:right; font-size:11px; color:#6B7280; }
-  .type-label { font-size:13px; font-weight:700; color:${couleurTitre}; margin:10px 0 4px; }
-  .badge { display:inline-block; background:${couleurBadge}; color:${couleurBadgeTxt}; font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; }
-  .meta { display:flex; gap:16px; margin-bottom:14px; flex-wrap:wrap; }
-  .meta-card { background:#F8F9FA; border:1px solid #E5E7EB; border-radius:8px; padding:10px 14px; min-width:110px; }
-  .meta-val { font-size:17px; font-weight:700; color:${couleurTitre}; }
-  .meta-lbl { font-size:10px; color:#6B7280; text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
-  table { width:100%; border-collapse:collapse; font-size:11px; }
-  thead th { background:${couleurTitre}; color:#fff; padding:8px 10px; text-align:left; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
-  tfoot td { background:#1F2937; color:#fff; padding:8px 10px; font-weight:700; font-size:11px; }
-  .footer { margin-top:16px; display:flex; justify-content:space-between; font-size:10px; color:#9CA3AF; border-top:1px solid #E5E7EB; padding-top:8px; }
-  .print-btn { position:fixed; top:16px; right:16px; background:${couleurTitre}; color:#fff; border:none; border-radius:8px; padding:10px 20px; font-size:14px; font-weight:600; cursor:pointer; font-family:Arial,sans-serif; display:flex; align-items:center; gap:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); z-index:999; }
-  .print-btn:hover { opacity:0.9; }
-  @media print { .print-btn { display:none; } body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  var html = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
+    +'<title>'+nomMutuelle+' — '+typeLabel+'</title>'
+    +'<style>'
+    +'@page{margin:12mm 10mm;size:A4 landscape}'
+    +'*{box-sizing:border-box;margin:0;padding:0}'
+    +'body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}'
+    +'.hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:3px solid '+couleur+'}'
+    +'.hdr-l{display:flex;align-items:center;gap:10px}'
+    +'.hdr-r{text-align:right;font-size:10px;color:#6B7280}'
+    +'h1{font-size:17px;color:'+couleur+';font-weight:700;margin-bottom:2px}'
+    +'.slogan{font-size:10px;color:#777}'
+    +'.badge{display:inline-block;background:#E0E7FF;color:#3730A3;font-size:10px;font-weight:700;padding:2px 10px;border-radius:20px;margin-top:4px}'
+    +'table{width:100%;border-collapse:collapse;font-size:10px}'
+    +'th{background:'+couleur+';color:#fff;padding:6px 8px;text-align:left;font-size:9px;font-weight:700;text-transform:uppercase}'
+    +'td{padding:5px 8px;border-bottom:1px solid #E5E7EB}'
+    +'.foot{display:flex;justify-content:space-between;margin-top:12px;font-size:9px;color:#9CA3AF;border-top:1px solid #E5E7EB;padding-top:6px}'
+    +'.btn-print{position:fixed;top:12px;right:12px;background:'+couleur+';color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;z-index:999}'
+    +'@media print{.btn-print{display:none}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}'
+    +'</style></head><body>'
+    +'<button class="btn-print" onclick="window.print()">🖨️ Imprimer / PDF</button>'
+    +'<div class="hdr"><div class="hdr-l">'+logoHtml
+    +'<div><h1>'+nomMutuelle+'</h1>'+(slogan?'<div class="slogan">'+slogan+'</div>':'')
+    +'<div style="font-size:12px;font-weight:700;color:'+couleur+';margin-top:4px">'+typeLabel+'</div>'
+    +'<span class="badge">'+liste.length+' membre(s) — '+moisLabel+'</span></div></div>'
+    +'<div class="hdr-r"><div>Exporté le <strong>'+now+'</strong></div>'
+    +'<div>Année : <strong>'+anneeActive+'</strong></div>'
+    +'<div style="margin-top:6px;font-size:11px;font-weight:700;color:'+couleur+'">Total collecté : '+totalCollecte.toLocaleString('fr-FR')+' F</div>'
+    +'<div style="font-size:11px;color:#DC2626">Restant dû : '+totalSolde.toLocaleString('fr-FR')+' F</div></div></div>'
+    +'<table>'
+    +'<thead><tr><th>N°</th><th>Code</th><th>Nom et Prénoms</th><th>Service</th><th>Téléphone</th><th>Statut</th><th style="text-align:right">Total payé</th><th style="text-align:right">Restant</th></tr></thead>'
+    +'<tbody>'+lignes+'</tbody>'
+    +'</table>'
+    +'<div class="foot"><span>'+nomMutuelle+' — '+typeLabel+'</span><span>Édité le '+now+'</span></div>'
+    +'</body></html>';
 
-.pat-filter-btn,.pat-filter-btn-m{background:var(--white);border:1.5px solid var(--gray-200);color:var(--gray-600)}
-.pat-filter-btn.active,.pat-filter-btn-m.active{background:var(--navy);color:#fff;border-color:var(--navy)}
-.pat-card{background:var(--white);border:1px solid var(--gray-200);border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.pat-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.pat-badge-immobilier{background:#DBEAFE;color:#1E40AF}
-.pat-badge-mobilier{background:#FEF3C7;color:#92400E}
-.pat-badge-equipement{background:#EDE9FE;color:#5B21B6}
-.pat-badge-vehicule{background:#DCFCE7;color:#166534}
-.pat-badge-entreprise{background:#ECFDF5;color:#065F46}
-.pat-badge-autre{background:var(--gray-100);color:var(--gray-600)}
-.pat-etat-bon{color:#16A34A;font-weight:600}
-.pat-etat-moyen{color:#D97706;font-weight:600}
-.pat-etat-mauvais{color:#DC2626;font-weight:600}
-.pat-statut-btn{background:var(--white);border:1.5px solid var(--gray-200);color:var(--gray-600)}
-.pat-statut-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
-.pat-card.sorti{opacity:.75;border-color:#FECACA;border-left:3px solid #DC2626}
-
-.sb-group{margin-bottom:4px}
-.sb-group-header{display:flex;align-items:center;justify-content:space-between;padding:7px 14px;cursor:pointer;user-select:none;border-radius:8px;transition:background .15s}
-.sb-group-header:hover{background:rgba(255,255,255,.08)}
-.sb-group-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.45)}
-.sb-group-arrow{font-size:10px;color:rgba(255,255,255,.4);transition:transform .2s}
-.sb-group-header.open .sb-group-arrow{transform:rotate(180deg)}
-.sb-group-items{overflow:hidden;transition:max-height .25s ease}
-.sb-group-items.closed{max-height:0}
-.sb-group-items.open{max-height:500px}
-.sb-item-indent{padding-left:24px !important}
-
-.section-ag{margin-bottom:14px}
-.bag-section-title{background:var(--navy);color:#fff;padding:8px 16px;font-size:13px;font-weight:700;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center}
-.bag-table{width:100%;border-collapse:collapse;font-size:13px;border:1px solid var(--gray-200);border-top:none;border-radius:0 0 8px 8px;overflow:hidden}
-.bag-table th{background:#F3F4F6;padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.05em}
-.bag-table td{padding:7px 12px;border-bottom:1px solid #F0F2F7;vertical-align:middle}
-.bag-table tr:last-child td{border-bottom:none}
-.bag-table .total-row td{background:#F8F9FC;font-weight:700;color:var(--navy)}
-.bag-table .grand-total td{background:var(--navy);color:#fff;font-weight:800}
-.bag-empty{padding:14px 16px;color:var(--gray-400);font-size:13px;font-style:italic;background:#fff;border:1px solid var(--gray-200);border-top:none;border-radius:0 0 8px 8px}
-.bag-bilan-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--gray-200);border-top:none;border-radius:0 0 8px 8px;overflow:hidden}
-.bag-bilan-col{padding:0}
-.bag-bilan-col-title{background:#EFF6FF;color:var(--navy);padding:8px 14px;font-size:12px;font-weight:700;text-align:center}
-.bag-bilan-row{display:flex;justify-content:space-between;padding:7px 14px;border-bottom:1px solid #F0F2F7;font-size:13px}
-.bag-bilan-row:last-child{border-bottom:none}
-.bag-total-final{background:var(--navy);color:#fff;padding:10px 14px;font-weight:800;font-size:14px;display:flex;justify-content:space-between}
-.bag-solde-box{background:#F0FDF4;border:2px solid #16A34A;border-radius:8px;padding:14px 20px;margin-top:10px;display:flex;justify-content:space-between;align-items:center}
-.bag-solde-deficit{background:#FEF2F2;border-color:#DC2626}
-
-.projet-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:18px;margin-bottom:12px;box-shadow:var(--shadow);border-left:4px solid var(--navy)}
-.projet-filter-btn{background:var(--white);border:1.5px solid var(--gray-200);color:var(--gray-600)}
-.projet-filter-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
-.proj-mb-filter{background:var(--white);border:1.5px solid var(--gray-200);color:var(--gray-600)}
-.proj-mb-filter.active{background:var(--navy);color:#fff;border-color:var(--navy)}
-.proj-progress-bar{height:10px;border-radius:99px;background:#E5E8EF;overflow:hidden;margin:8px 0}
-.proj-progress-fill{height:100%;border-radius:99px;transition:width .4s ease}
-.proj-mb-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--gray-100);font-size:13px}
-.proj-mb-row:last-child{border-bottom:none}
-
-.compte-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
-.compte-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px}
-.compte-solde{font-size:26px;font-weight:800;margin:8px 0 4px}
-.tx-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--gray-100);font-size:13px}
-.tx-row:last-child{border-bottom:none}
-.tx-entree{color:#16A34A;font-weight:700}
-.tx-sortie{color:#DC2626;font-weight:700}
-.tx-virement{color:#1D4ED8;font-weight:700}
-</style>
-</head>
-<body>
-<button class="print-btn" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
-
-<div class="header">
-  <div>
-    <div class="header-brand">
-      ${logoHtml}
-      <div class="header-brand-text">
-        <h1>${nomMutuelle}</h1>
-        ${sloganMutuelle?`<div class="slogan">${sloganMutuelle}</div>`:''}
-      </div>
-    </div>
-    <div class="type-label">${typeLabel}</div>
-    <span class="badge">${liste.length} membre(s) — ${moisLabel}</span>
-  </div>
-  <div class="header-right">
-    <div>Exporté le <strong>${now}</strong></div>
-    <div style="margin-top:4px">Année de référence : <strong>${anneeActive}</strong></div>
-  </div>
-</div>
-
-<div class="meta">
-  <div class="meta-card"><div class="meta-val">${liste.length}</div><div class="meta-lbl">Membres</div></div>
-  <div class="meta-card"><div class="meta-val">${totalCollecte.toLocaleString('fr-FR')} F</div><div class="meta-lbl">Total collecté</div></div>
-  ${type!=='ajour'?`<div class="meta-card"><div class="meta-val" style="color:#B85C00">${totalSolde.toLocaleString('fr-FR')} F</div><div class="meta-lbl">Restant dû</div></div>`:''}
-  ${moisSel?`<div class="meta-card"><div class="meta-val" style="font-size:13px">${moisSel} ${anneeActive}</div><div class="meta-lbl">Mois de référence</div></div>`:''}
-</div>
-
-<table>
-  <thead>
-    <tr>
-      <th>N°</th><th>Code</th><th>Nom et Prénom</th><th>Fonction</th>
-      <th>Service</th><th>Téléphone</th>
-      <th style="text-align:center">${moisSel?'Statut '+moisSel:'Mois payés'}</th>
-      <th style="text-align:right">Total payé</th>
-      <th style="text-align:right">Solde restant</th>
-    </tr>
-  </thead>
-  <tbody>${lignes}</tbody>
-  <tfoot>
-    <tr>
-      <td colspan="6">TOTAL — ${liste.length} membres</td>
-      <td></td>
-      <td style="text-align:right">${totalCollecte.toLocaleString('fr-FR')} F</td>
-      <td style="text-align:right">${totalSolde.toLocaleString('fr-FR')} F</td>
-    </tr>
-  </tfoot>
-</table>
-
-<div class="footer">
-  <span>${nomMutuelle} — Document généré automatiquement</span>
-  <span>Exporté le ${now} · ${liste.length} membre(s)</span>
-</div>
-
-  <!-- MODAL PATRIMOINE -->
-  <div class="modal-bg" id="modal-patrimoine">
-    <div class="modal" style="max-width:500px">
-      <div class="modal-title">
-        <span id="modal-patrimoine-title">🏛️ Ajouter un bien</span>
-        <button class="modal-close" onclick="closeModal('modal-patrimoine')">✕</button>
-      </div>
-      <div class="field">
-        <label>Nom du bien *</label>
-        <input type="text" id="pat-nom" placeholder="Ex: Terrain de la mutuelle, Véhicule Toyota…"/>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field">
-          <label>Catégorie *</label>
-          <select id="pat-categorie">
-            <option value="immobilier">🏠 Immobilier</option>
-            <option value="mobilier">🪑 Mobilier</option>
-            <option value="equipement">⚙️ Équipement</option>
-            <option value="vehicule">🚗 Véhicule</option>
-            <option value="entreprise">🏢 Entreprise</option>
-            <option value="autre">📦 Autre</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>État</label>
-          <select id="pat-etat">
-            <option value="bon">✅ Bon état</option>
-            <option value="moyen">⚠️ État moyen</option>
-            <option value="mauvais">❌ Mauvais état</option>
-          </select>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field">
-          <label>Valeur estimée (FCFA)</label>
-          <input type="number" id="pat-valeur" placeholder="0" step="1000"/>
-        </div>
-        <div class="field">
-          <label>Date d'acquisition</label>
-          <input type="date" id="pat-date"/>
-        </div>
-      </div>
-      <div class="field">
-        <label>Quantité</label>
-        <input type="number" id="pat-quantite" placeholder="1" min="1" value="1"/>
-      </div>
-      <div class="field">
-        <label>Localisation / Adresse</label>
-        <input type="text" id="pat-localisation" placeholder="Ex: Cocody, Rue des Jardins, Abidjan…"/>
-      </div>
-      <div class="field">
-        <label>Coordonnées GPS <span style="font-weight:400;color:var(--gray-400);font-size:11px">(optionnel)</span></label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="pat-gps" placeholder="Ex: 5.3599517, -4.0082563" style="flex:1;font-family:monospace;font-size:13px" oninput="updateGpsLink(this.value)"/>
-          <a href="https://www.google.com/maps" target="_blank"
-            style="padding:8px 12px;background:var(--navy);color:#fff;border-radius:8px;font-size:13px;white-space:nowrap;flex-shrink:0;text-decoration:none;display:inline-flex;align-items:center;gap:4px">
-            🗺️ Google Maps
-          </a>
-        </div>
-        <div style="font-size:11px;color:var(--gray-400);margin-top:3px;line-height:1.6">
-          Sur Google Maps : clic droit → copier coordonnées → coller ici
-          &nbsp;·&nbsp; <a id="pat-gps-link" href="#" target="_blank" style="color:var(--blue);display:none">🗺️ Voir ce bien</a>
-        </div>
-      </div>
-      <div class="field">
-        <label>Description <span style="font-weight:400;color:var(--gray-400);font-size:11px">(optionnel)</span></label>
-        <textarea id="pat-description" rows="3" placeholder="Détails, caractéristiques, numéro de série, superficie…" style="width:100%;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;resize:vertical"></textarea>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-ghost" onclick="closeModal('modal-patrimoine')">Annuler</button>
-        <button class="btn btn-primary" style="background:linear-gradient(135deg,#065F46,#059669)" onclick="savePatrimoine()">💾 Enregistrer</button>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- MODAL SORTIE PATRIMOINE -->
-  <div class="modal-bg" id="modal-sortie-patrimoine">
-    <div class="modal" style="max-width:440px">
-      <div class="modal-title">
-        <span>📤 Sortir du patrimoine</span>
-        <button class="modal-close" onclick="closeModal('modal-sortie-patrimoine')">✕</button>
-      </div>
-      <div id="sortie-bien-nom" style="font-size:14px;font-weight:700;color:var(--navy);background:var(--gray-100);padding:10px 14px;border-radius:8px;margin-bottom:16px"></div>
-      <div class="field">
-        <label>Motif de sortie *</label>
-        <div style="display:flex;flex-direction:column;gap:8px" id="sortie-motifs">
-          <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;cursor:pointer;font-size:13px">
-            <input type="radio" name="sortie-motif" value="vente" onchange="onSortieMotif('vente')"/> 💰 Vente
-          </label>
-          <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;cursor:pointer;font-size:13px">
-            <input type="radio" name="sortie-motif" value="don" onchange="onSortieMotif('don')"/> 🎁 Don / Cession gratuite
-          </label>
-          <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;cursor:pointer;font-size:13px">
-            <input type="radio" name="sortie-motif" value="perte" onchange="onSortieMotif('perte')"/> ⚠️ Perte / Destruction
-          </label>
-          <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;cursor:pointer;font-size:13px">
-            <input type="radio" name="sortie-motif" value="autre" onchange="onSortieMotif('autre')"/> 📋 Autre — préciser
-          </label>
-        </div>
-      </div>
-      <div class="field">
-        <label>Date de sortie</label>
-        <input type="date" id="sortie-date"/>
-      </div>
-      <div class="field" id="sortie-precision-block" style="display:none">
-        <label>Précision *</label>
-        <input type="text" id="sortie-precision" placeholder="Ex: vendu à M. Konan pour 500 000 FCFA, remis à ONG…"/>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-ghost" onclick="closeModal('modal-sortie-patrimoine')">Annuler</button>
-        <button class="btn btn-primary" style="background:linear-gradient(135deg,#991B1B,#DC2626)" onclick="confirmerSortiePatrimoine()">📤 Confirmer la sortie</button>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- MODAL PRÊT -->
-  <div class="modal-bg" id="modal-pret">
-    <div class="modal" style="max-width:560px">
-      <div class="modal-title">
-        <span id="modal-pret-title">🏦 Nouveau prêt</span>
-        <button class="modal-close" onclick="closeModal('modal-pret')">✕</button>
-      </div>
-      <!-- Membre bénéficiaire -->
-      <div class="field field-full">
-        <label>Membre bénéficiaire *</label>
-        <div style="position:relative">
-          <div style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none">
-            <svg viewBox="0 0 24 24" fill="none" stroke="var(--gray-400)" stroke-width="2" style="width:15px;height:15px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          </div>
-          <input type="text" id="pret-mb-search" placeholder="Nom ou code du membre…"
-            oninput="filterPretMbMembers()" autocomplete="off" style="padding-left:32px;width:100%"/>
-          <div id="pret-mb-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:999;max-height:200px;overflow-y:auto;margin-top:4px"></div>
-        </div>
-        <input type="hidden" id="pret-mb-code"/>
-        <div id="pret-mb-selected-bar" style="display:none;margin-top:8px;padding:10px 14px;background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;display:flex;align-items:center;gap:12px">
-          <div>
-            <div style="font-size:13px;font-weight:700;color:var(--navy)" id="pret-mb-nom">—</div>
-            <div style="font-size:11px;color:var(--gray-500)">Code : <span id="pret-mb-code-lbl" style="font-family:var(--mono);font-weight:600">—</span></div>
-          </div>
-          <button type="button" onclick="clearPretMb()" style="margin-left:auto;background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:16px">✕</button>
-        </div>
-      </div>
-
-      <div class="form-grid">
-        <div class="field">
-          <label>Montant du prêt (FCFA) *</label>
-          <input type="number" id="pret-montant" placeholder="Ex: 500000" min="0" step="1000" oninput="calcAmortissement()"/>
-        </div>
-        <div class="field">
-          <label>Type de taux *</label>
-          <select id="pret-type-taux" onchange="calcAmortissement()">
-            <option value="fixe">Taux fixe (annuité constante)</option>
-            <option value="degressif">Taux dégressif (capital constant)</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Taux d'intérêt (% / mois) *</label>
-          <input type="number" id="pret-taux" placeholder="Ex: 2 (0 = sans intérêt)" min="0" max="100" step="0.1" oninput="calcAmortissement()"/>
-        </div>
-        <div class="field">
-          <label>Durée (nb d'échéances) *</label>
-          <input type="number" id="pret-duree" placeholder="Ex: 12" min="1" max="120" oninput="calcAmortissement()"/>
-        </div>
-        <div class="field">
-          <label>Périodicité *</label>
-          <select id="pret-periodicite" onchange="calcAmortissement()">
-            <option value="mensuel">Mensuelle</option>
-            <option value="trimestriel">Trimestrielle</option>
-            <option value="annuel">Annuelle</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Date de déblocage *</label>
-          <input type="date" id="pret-date" oninput="calcAmortissement()"/>
-        </div>
-        <div class="field">
-          <label>Objet / Motif</label>
-          <input type="text" id="pret-objet" placeholder="Ex: Frais de scolarité, Santé…"/>
-        </div>
-        <div class="field">
-          <label>Mode de déblocage</label>
-          <select id="pret-mode">
-            <option value="especes">Espèces</option>
-            <option value="mobile_money">Mobile Money</option>
-            <option value="virement">Virement bancaire</option>
-            <option value="cheque">Chèque</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Compte source du déblocage</label>
-          <select id="pret-compte" class="select-compte">
-            <option value="">— Sélectionner un compte —</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Aperçu amortissement -->
-      <div id="pret-preview" style="display:none;margin-top:8px;background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:10px;padding:14px">
-        <div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:8px">📊 Aperçu du prêt</div>
-        <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#14532D">
-          <span>💰 Mensualité : <strong id="prev-mensualite">—</strong></span>
-          <span>📈 Total intérêts : <strong id="prev-interets">—</strong></span>
-          <span>📋 Coût total : <strong id="prev-total">—</strong></span>
-        </div>
-      </div>
-
-      <!-- Tableau amortissement aperçu -->
-      <div id="pret-amort-preview" style="display:none;margin-top:12px;max-height:200px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px">
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead style="background:var(--navy);color:#fff;position:sticky;top:0">
-            <tr>
-              <th style="padding:6px 8px">Éch.</th>
-              <th style="padding:6px 8px">Date</th>
-              <th style="padding:6px 8px">Capital</th>
-              <th style="padding:6px 8px">Intérêts</th>
-              <th style="padding:6px 8px">Mensualité</th>
-              <th style="padding:6px 8px">Capital restant</th>
-            </tr>
-          </thead>
-          <tbody id="pret-amort-tbody"></tbody>
-        </table>
-      </div>
-
-      <div id="pret-err" style="display:none;color:#DC2626;font-size:13px;margin-top:8px;padding:8px 12px;background:#FEF2F2;border-radius:8px"></div>
-
-      <div class="btn-row" style="margin-top:16px">
-        <button class="btn btn-primary" style="background:linear-gradient(135deg,#1E40AF,#3B82F6);flex:1" onclick="savePret()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px"><polyline points="20 6 9 17 4 12"/></svg>
-          <span id="pret-save-txt">Enregistrer le prêt</span>
-        </button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-pret')">Annuler</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL REMBOURSEMENT -->
-  <div class="modal-bg" id="modal-remboursement">
-    <div class="modal" style="max-width:440px">
-      <div class="modal-title">
-        <span>💳 Enregistrer un remboursement</span>
-        <button class="modal-close" onclick="closeModal('modal-remboursement')">✕</button>
-      </div>
-      <div id="rembours-pret-info" style="background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px"></div>
-      <div class="form-grid">
-        <div class="field">
-          <label>Numéro d'échéance *</label>
-          <select id="rembours-echeance"></select>
-        </div>
-        <div class="field">
-          <label>Montant payé (FCFA) *</label>
-          <input type="number" id="rembours-montant" min="0" step="100"/>
-        </div>
-        <div class="field">
-          <label>Date de paiement *</label>
-          <input type="date" id="rembours-date"/>
-        </div>
-        <div class="field">
-          <label>Mode de paiement</label>
-          <select id="rembours-mode">
-            <option value="especes">Espèces</option>
-            <option value="mobile_money">Mobile Money</option>
-            <option value="virement">Virement bancaire</option>
-            <option value="cheque">Chèque</option>
-          </select>
-        </div>
-        <div class="field field-full">
-          <label>Notes</label>
-          <input type="text" id="rembours-notes" placeholder="Observations…"/>
-      </div>
-      <div class="field field-full">
-        <label>Compte destinataire</label>
-        <select id="rembours-compte" class="select-compte" onchange="localStorage.setItem('_pret_remb_compte',this.value)">
-          <option value="">— Sélectionner un compte —</option>
-        </select>
-        </div>
-      </div>
-      <input type="hidden" id="rembours-pret-id"/>
-      <div id="rembours-err" style="display:none;color:#DC2626;font-size:13px;margin-top:8px"></div>
-      <div class="btn-row" style="margin-top:16px">
-        <button class="btn btn-primary" style="background:linear-gradient(135deg,#065F46,#059669);flex:1" onclick="saveRemboursement()">
-          💳 Enregistrer le remboursement
-        </button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-remboursement')">Annuler</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL DETAIL PRÊT -->
-  <div class="modal-bg" id="modal-pret-detail">
-    <div class="modal" style="max-width:680px">
-      <div class="modal-title">
-        <span id="modal-pret-detail-title">🏦 Détail du prêt</span>
-        <button class="modal-close" onclick="closeModal('modal-pret-detail')">✕</button>
-      </div>
-      <div id="pret-detail-content"></div>
-      <div class="btn-row" style="margin-top:16px">
-        <button class="btn btn-sm" style="background:#DC2626;color:#fff" onclick="exportPretFichePDF(_currentPretId)">📄 Exporter fiche PDF</button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-pret-detail')">Fermer</button>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- MODAL ARCHIVAGE -->
-  <div class="modal-bg" id="modal-archivage">
-    <div class="modal" style="max-width:520px">
-      <div class="modal-title" style="background:linear-gradient(135deg,#92400E,#D97706);color:#fff;border-radius:10px 10px 0 0;margin:-24px -24px 16px">
-        <span style="padding:14px 20px;display:block">🗄️ Archivage des données</span>
-        <button class="modal-close" onclick="closeModal('modal-archivage')" style="color:#fff">✕</button>
-      </div>
-
-      <div style="background:#FFFBEB;border:1.5px solid #F59E0B;border-radius:10px;padding:14px 18px;margin-bottom:16px">
-        <div style="font-size:13px;font-weight:700;color:#92400E;margin-bottom:8px">⚠️ Lisez attentivement avant de continuer</div>
-        <div style="font-size:13px;color:#78350F;line-height:1.8" id="archive-preview-text"></div>
-      </div>
-
-      <div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:10px;padding:14px 18px;margin-bottom:16px">
-        <div style="font-size:13px;font-weight:700;color:#166534;margin-bottom:8px">✅ Ce qui sera fait</div>
-        <div style="font-size:13px;color:#14532D;line-height:1.8" id="archive-action-text"></div>
-      </div>
-
-      <div style="background:#FEF2F2;border:1.5px solid #FECACA;border-radius:10px;padding:14px 18px;margin-bottom:16px">
-        <div style="font-size:13px;font-weight:700;color:#991B1B;margin-bottom:8px">🔴 Attention</div>
-        <div style="font-size:13px;color:#7F1D1D;line-height:1.8">
-          Cette opération est <strong>irréversible</strong>. Une fois les anciennes données supprimées du Sheets principal, elles ne seront accessibles que dans le Sheets d'archive.<br>
-          Assurez-vous d'avoir vérifié que le Sheets archive est bien créé avant de confirmer.
-        </div>
-      </div>
-
-      <!-- Double confirmation -->
-      <div class="field" style="margin-bottom:12px">
-        <label style="font-size:13px;font-weight:600;color:var(--navy)">
-          Pour confirmer, tapez exactement : <strong style="color:#DC2626">ARCHIVER</strong>
-        </label>
-        <input type="text" id="archive-confirm-input" placeholder="Tapez ARCHIVER ici…"
-          oninput="checkArchiveConfirm()"
-          style="width:100%;margin-top:6px;border:1.5px solid var(--gray-200);border-radius:8px;padding:10px 14px;font-size:14px;font-family:var(--mono);font-weight:700"/>
-      </div>
-
-      <div id="archive-progress" style="display:none;margin-bottom:12px">
-        <div style="font-size:13px;font-weight:600;color:var(--navy);margin-bottom:6px" id="archive-progress-label">⏳ Archivage en cours…</div>
-        <div style="height:8px;background:#E5E8EF;border-radius:99px;overflow:hidden">
-          <div id="archive-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#D97706,#F59E0B);border-radius:99px;transition:width .4s ease"></div>
-        </div>
-      </div>
-
-      <div class="btn-row" style="margin-top:4px">
-        <button class="btn btn-ghost" onclick="closeModal('modal-archivage')">Annuler</button>
-        <button id="btn-confirmer-archivage" class="btn" disabled
-          style="background:#D97706;color:#fff;opacity:.5;cursor:not-allowed"
-          onclick="confirmerArchivage()">
-          🗄️ Confirmer l'archivage
-        </button>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- MODAL NOUVEAU PROJET -->
-  <div class="modal-bg" id="modal-projet">
-    <div class="modal" style="max-width:600px">
-      <div class="modal-title">
-        <span id="modal-projet-title">🏗️ Nouveau projet</span>
-        <button class="modal-close" onclick="closeModal('modal-projet')">✕</button>
-      </div>
-      <div class="form-grid">
-        <div class="field field-full">
-          <label>Nom du projet *</label>
-          <input type="text" id="proj-nom" placeholder="Ex: Construction du siège social, Achat véhicule…"/>
-        </div>
-        <div class="field field-full">
-          <label>Description / Objectif</label>
-          <textarea id="proj-desc" rows="2" style="width:100%;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;resize:vertical" placeholder="Décrivez le projet, ses objectifs…"></textarea>
-        </div>
-        <div class="field">
-          <label>Coût total du projet (FCFA) *</label>
-          <input type="number" id="proj-cout" placeholder="Ex: 5000000" min="0" step="1000" oninput="calcProjetRepartition()"/>
-        </div>
-        <div class="field">
-          <label>Montant à collecter (FCFA) *</label>
-          <input type="number" id="proj-montant-cible" placeholder="Ex: 3000000" min="0" step="1000" oninput="calcProjetRepartition()"/>
-        </div>
-        <div class="field">
-          <label>Date de début *</label>
-          <input type="date" id="proj-date-debut"/>
-        </div>
-        <div class="field">
-          <label>Date limite de réalisation *</label>
-          <input type="date" id="proj-date-fin"/>
-        </div>
-        <div class="field">
-          <label>Type de cotisation *</label>
-          <select id="proj-periodicite" onchange="calcProjetRepartition()">
-            <option value="mensuel">Mensuelle</option>
-            <option value="trimestriel">Trimestrielle</option>
-            <option value="annuel">Annuelle</option>
-            <option value="unique">Paiement unique</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Statut</label>
-          <select id="proj-statut">
-            <option value="preparation">⏳ En préparation</option>
-            <option value="actif">🟢 Actif</option>
-            <option value="suspendu">⏸️ Suspendu</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Sélection des membres -->
-      <div style="margin-top:12px;background:#F8F9FC;border:1.5px solid var(--gray-200);border-radius:10px;padding:14px">
-        <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:10px">👥 Membres participants</div>
-        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-          <button type="button" class="btn btn-sm" style="background:#1E40AF;color:#fff" onclick="selectionnerTousMembres()">✅ Sélectionner tous</button>
-          <button type="button" class="btn btn-ghost btn-sm" onclick="deselectionnerTousMembres()">❌ Tout désélectionner</button>
-          <span id="proj-nb-selectionnes" style="font-size:12px;color:var(--gray-500);align-self:center">0 membre(s) sélectionné(s)</span>
-        </div>
-        <!-- Recherche membres -->
-        <input type="text" id="proj-mb-search" placeholder="🔍 Filtrer les membres…" oninput="filterProjMembres()"
-          style="width:100%;margin-bottom:8px;padding:7px 12px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px"/>
-        <div id="proj-membres-liste" style="max-height:220px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;background:#fff"></div>
-      </div>
-
-      <!-- Répartition -->
-      <div style="margin-top:12px;background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px" id="proj-repartition-bloc" style="display:none">
-        <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:8px">💰 Répartition automatique</div>
-        <div style="display:flex;gap:8px;margin-bottom:10px">
-          <button type="button" class="btn btn-sm" id="btn-repartition-egale"
-            style="background:#1E40AF;color:#fff" onclick="setTypeRepartition('egale')">⚖️ Égale</button>
-          <button type="button" class="btn btn-sm btn-ghost" id="btn-repartition-perso"
-            onclick="setTypeRepartition('personnalisee')">✏️ Personnalisée</button>
-        </div>
-        <div id="proj-repartition-info" style="font-size:13px;color:#1E40AF;margin-bottom:8px"></div>
-        <div id="proj-repartition-perso-liste" style="display:none;max-height:200px;overflow-y:auto;border:1px solid #93C5FD;border-radius:8px;background:#fff"></div>
-      </div>
-
-      <div id="proj-err" style="display:none;color:#DC2626;font-size:13px;margin-top:8px;padding:8px 12px;background:#FEF2F2;border-radius:8px"></div>
-
-      <div class="btn-row" style="margin-top:16px">
-        <button class="btn btn-primary" style="background:linear-gradient(135deg,#5B21B6,#7C3AED);flex:1" onclick="saveProjet()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px"><polyline points="20 6 9 17 4 12"/></svg>
-          <span id="proj-save-txt">Créer le projet</span>
-        </button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-projet')">Annuler</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL PAIEMENT PROJET -->
-  <div class="modal-bg" id="modal-projet-paiement">
-    <div class="modal" style="max-width:440px">
-      <div class="modal-title">
-        <span>💳 Paiement projet</span>
-        <button class="modal-close" onclick="closeModal('modal-projet-paiement')">✕</button>
-      </div>
-      <div id="proj-paiement-info" style="background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px"></div>
-      <div class="form-grid">
-        <div class="field field-full">
-          <label>Membre *</label>
-          <div style="position:relative">
-            <input type="text" id="proj-pay-search" placeholder="🔍 Nom ou code du membre…"
-              oninput="filterProjetPayMembers()" autocomplete="off" style="width:100%"/>
-            <div id="proj-pay-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:999;max-height:200px;overflow-y:auto;margin-top:4px"></div>
-          </div>
-          <input type="hidden" id="proj-pay-member-code"/>
-          <div id="proj-pay-member-bar" style="display:none;margin-top:8px;padding:8px 12px;background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;font-size:12px;display:flex;align-items:center;justify-content:space-between">
-            <div>
-              <span id="proj-pay-member-nom" style="font-weight:700;color:var(--navy)"></span>
-              <span id="proj-pay-member-quota" style="font-size:11px;color:var(--gray-500);margin-left:8px"></span>
-            </div>
-            <button type="button" onclick="clearProjetPayMember()" style="background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:14px">✕</button>
-          </div>
-        </div>
-        <div class="field">
-          <label>Montant payé (FCFA) *</label>
-          <input type="number" id="proj-pay-montant" min="0" step="100" placeholder="Montant versé"/>
-        </div>
-        <div class="field">
-          <label>Date de paiement *</label>
-          <input type="date" id="proj-pay-date"/>
-        </div>
-        <div class="field">
-          <label>Mode de paiement</label>
-          <select id="proj-pay-mode">
-            <option value="especes">Espèces</option>
-            <option value="mobile_money">Mobile Money</option>
-            <option value="virement">Virement</option>
-            <option value="cheque">Chèque</option>
-          </select>
-        </div>
-        <div class="field field-full">
-          <label>Notes</label>
-          <input type="text" id="proj-pay-notes" placeholder="Observations…"/>
-        </div>
-      </div>
-      <input type="hidden" id="proj-pay-projet-id"/>
-      <div id="proj-pay-err" style="display:none;color:#DC2626;font-size:13px;margin-top:8px"></div>
-      <div class="btn-row" style="margin-top:16px">
-        <button class="btn btn-primary" style="background:linear-gradient(135deg,#065F46,#059669);flex:1" onclick="saveProjetPaiement()">
-          💳 Enregistrer le paiement
-        </button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-projet-paiement')">Annuler</button>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- MODAL NOUVEAU COMPTE -->
-  <div class="modal-bg" id="modal-compte">
-    <div class="modal" style="max-width:440px">
-      <div class="modal-title">
-        <span id="modal-compte-title">🏧 Nouveau compte</span>
-        <button class="modal-close" onclick="closeModal('modal-compte')">✕</button>
-      </div>
-      <div class="form-grid">
-        <div class="field field-full">
-          <label>Nom du compte *</label>
-          <input type="text" id="compte-nom" placeholder="Ex: Caisse principale, Orange Money, SGBCI…"/>
-        </div>
-        <div class="field">
-          <label>Type de compte *</label>
-          <select id="compte-type">
-            <option value="caisse">💵 Caisse (espèces)</option>
-            <option value="mobile_money">📱 Mobile Money</option>
-            <option value="banque">🏦 Compte bancaire</option>
-            <option value="autre">📋 Autre</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Couleur d'identification</label>
-          <input type="color" id="compte-couleur" value="#0F2544" style="height:38px;width:100%;border-radius:8px;border:1.5px solid var(--gray-200);padding:3px"/>
-        </div>
-        <div class="field">
-          <label>Solde initial (FCFA)</label>
-          <input type="number" id="compte-solde-initial" value="0" min="0" step="100" placeholder="0"/>
-        </div>
-        <div class="field field-full">
-          <label>Description / Numéro de compte</label>
-          <input type="text" id="compte-desc" placeholder="Ex: N° 123456789, Opérateur Wave…"/>
-        </div>
-      </div>
-      <div class="btn-row" style="margin-top:16px">
-        <button class="btn btn-primary" style="background:linear-gradient(135deg,#1E40AF,#3B82F6);flex:1" onclick="saveCompte()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px"><polyline points="20 6 9 17 4 12"/></svg>
-          <span id="compte-save-txt">Créer le compte</span>
-        </button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-compte')">Annuler</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL VIREMENT -->
-  <div class="modal-bg" id="modal-virement">
-    <div class="modal" style="max-width:440px">
-      <div class="modal-title">
-        <span>🔄 Virement entre comptes</span>
-        <button class="modal-close" onclick="closeModal('modal-virement')">✕</button>
-      </div>
-      <div class="form-grid">
-        <div class="field">
-          <label>Compte source *</label>
-          <select id="virement-source" onchange="updateVirementSolde()">
-            <option value="">— Choisir —</option>
-          </select>
-          <div id="virement-source-solde" style="font-size:11px;color:var(--gray-500);margin-top:3px"></div>
-        </div>
-        <div class="field">
-          <label>Compte destination *</label>
-          <select id="virement-destination">
-            <option value="">— Choisir —</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Montant (FCFA) *</label>
-          <input type="number" id="virement-montant" min="0" step="100" placeholder="Montant à transférer"/>
-        </div>
-        <div class="field">
-          <label>Date *</label>
-          <input type="date" id="virement-date"/>
-        </div>
-        <div class="field field-full">
-          <label>Motif</label>
-          <input type="text" id="virement-motif" placeholder="Ex: Alimentation compte bancaire…"/>
-        </div>
-      </div>
-      <div id="virement-err" style="display:none;color:#DC2626;font-size:13px;margin-top:8px;padding:8px 12px;background:#FEF2F2;border-radius:8px"></div>
-      <div class="btn-row" style="margin-top:16px">
-        <button class="btn btn-primary" style="background:linear-gradient(135deg,#1E40AF,#3B82F6);flex:1" onclick="saveVirement()">
-          🔄 Effectuer le virement
-        </button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-virement')">Annuler</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL AJUSTEMENT MANUEL -->
-  <div class="modal-bg" id="modal-ajustement">
-    <div class="modal" style="max-width:420px">
-      <div class="modal-title">
-        <span>✏️ Ajustement manuel</span>
-        <button class="modal-close" onclick="closeModal('modal-ajustement')">✕</button>
-      </div>
-      <div id="ajustement-compte-info" style="background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px"></div>
-      <div class="form-grid">
-        <div class="field">
-          <label>Type d'ajustement *</label>
-          <select id="ajust-type">
-            <option value="depot">💰 Dépôt / Entrée manuelle</option>
-            <option value="retrait">💸 Retrait / Sortie manuelle</option>
-            <option value="correction">🔧 Correction de solde</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Montant (FCFA) *</label>
-          <input type="number" id="ajust-montant" min="0" step="100"/>
-        </div>
-        <div class="field">
-          <label>Date *</label>
-          <input type="date" id="ajust-date"/>
-        </div>
-        <div class="field field-full">
-          <label>Motif *</label>
-          <input type="text" id="ajust-motif" placeholder="Décrivez l'opération…"/>
-        </div>
-      </div>
-      <input type="hidden" id="ajust-compte-id"/>
-      <div class="btn-row" style="margin-top:16px">
-        <button class="btn btn-primary" style="flex:1" onclick="saveAjustement()">✏️ Enregistrer</button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-ajustement')">Annuler</button>
-      </div>
-    </div>
-  </div>
-
-</body>
-</html>`;
-
-  // Téléchargement direct du fichier HTML (s'ouvre et s'imprime en PDF via le navigateur)
-  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
-  const url  = URL.createObjectURL(blob);
-  if(/Android/i.test(navigator.userAgent)){
-    window.open(url, '_blank');
+  var win = window.open('','_blank','width=1100,height=850');
+  if(win){
+    win.document.write(html);
+    win.document.close();
   } else {
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = nomFichier;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    _showDocToast('⚠️ Autorisez les popups pour exporter le PDF.');
   }
-  setTimeout(()=>URL.revokeObjectURL(url), 10000);
+}
+
+
+function printCodesPage(){
+  const couleur    = branding.color || '#0F2544';
+  const nomMutuelle= branding.nom || 'MUTUELLE';
+  const now        = new Date().toLocaleDateString('fr-FR');
+  const anneeActive= _anneeActive || '2026';
+  const filtered   = members.filter(m=>m.actif);
+
+  const lignes = filtered.map(function(m,i){
+    var bg = i%2===0?'#F8F9FA':'#FFFFFF';
+    return '<tr style="background:'+bg+'">'
+      +'<td style="padding:8px 12px;text-align:center;color:#6B7280;font-weight:600">'+m.num+'</td>'
+      +'<td style="padding:8px 12px;font-weight:700">'+((m.prenom?m.prenom+' ':'')+m.nom)+'</td>'
+      +'<td style="padding:8px 12px;font-family:monospace;font-size:14px;font-weight:800;color:'+couleur+';letter-spacing:2px">'+m.code+'</td>'
+      +'<td style="padding:8px 12px;color:#374151">'+( m.tel||'—')+'</td>'
+      +'<td style="padding:8px 12px;color:#374151">'+( m.service||'—')+'</td>'
+      +'</tr>';
+  }).join('');
+
+  var html = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
+    +'<title>'+nomMutuelle+' — Codes membres confidentiels</title>'
+    +'<style>'
+    +'@page{margin:14mm 12mm;size:A4}'
+    +'*{box-sizing:border-box;margin:0;padding:0}'
+    +'body{font-family:Arial,sans-serif;font-size:12px;color:#111;background:#fff}'
+    +'.hdr{text-align:center;padding:16px;background:'+couleur+';color:#fff;margin-bottom:16px;border-radius:8px}'
+    +'.hdr h1{font-size:20px;font-weight:800;margin-bottom:4px}'
+    +'.hdr p{font-size:11px;opacity:.8}'
+    +'.warning{background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11px;color:#92400E}'
+    +'table{width:100%;border-collapse:collapse;font-size:12px}'
+    +'th{background:'+couleur+';color:#fff;padding:8px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase}'
+    +'td{padding:6px 12px;border-bottom:1px solid #E5E7EB}'
+    +'.foot{text-align:center;margin-top:14px;font-size:10px;color:#9CA3AF;border-top:1px solid #E5E7EB;padding-top:8px}'
+    +'.btn-print{position:fixed;top:12px;right:12px;background:'+couleur+';color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;z-index:999}'
+    +'@media print{.btn-print{display:none}.warning{display:none}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}'
+    +'</style></head><body>'
+    +'<button class="btn-print" onclick="window.print()">🖨️ Imprimer / PDF</button>'
+    +'<div class="hdr"><h1>'+nomMutuelle+'</h1><p>🔑 Codes confidentiels membres — '+anneeActive+' — Édité le '+now+'</p></div>'
+    +'<div class="warning">⚠️ <strong>Document CONFIDENTIEL</strong> — Remettez chaque code individuellement. Ne partagez jamais cette liste complète.</div>'
+    +'<table>'
+    +'<thead><tr><th>N°</th><th>Nom et Prénoms</th><th>Code / Mot de passe</th><th>Téléphone</th><th>Service</th></tr></thead>'
+    +'<tbody>'+lignes+'</tbody>'
+    +'</table>'
+    +'<div class="foot">'+nomMutuelle+' — Codes membres — '+filtered.length+' membre(s) actif(s)</div>'
+    +'</body></html>';
+
+  var win = window.open('','_blank','width=900,height=800');
+  if(win){
+    win.document.write(html);
+    win.document.close();
+  } else {
+    _showDocToast('⚠️ Autorisez les popups pour imprimer.');
+  }
 }
 
 function renderProfilPage(){
