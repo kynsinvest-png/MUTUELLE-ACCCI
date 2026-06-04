@@ -4791,6 +4791,8 @@ async function adminLogin(){
     }
     if(found){
       err.style.display='none';
+      // Normaliser le rôle (supprimer espaces, mettre en minuscule)
+      found.role = (found.role||'full').trim().toLowerCase();
       currentRole='admin'; currentAdmin=found;
       if(remember) saveRememberMe('admin', {user:u, rawPass:btoa(p)});
       else clearRememberMe('admin');
@@ -6905,25 +6907,10 @@ function renderExcMember(){
    ANNULER PAIEMENT EXCEPTIONNEL
 ══════════════════════════════════════════ */
 function openExcPayByIdx(memberIdx, montant){
-  const m = window._excDetailMbs[memberIdx];
+  const m = window._excDetailMbs?.[memberIdx];
   const excIdx = window._excDetailIdx;
-  window._excPayMemberIdx = memberIdx;
-  document.getElementById('exc-pay-exc-idx').value = excIdx;
-  document.getElementById('exc-pay-member-code').value = m.code;
-  document.getElementById('exc-pay-amount').value = montant;
-  document.getElementById('exc-pay-date').value = new Date().toISOString().split('T')[0];
-  document.getElementById('exc-pay-ok').style.display = 'none';
-  document.getElementById('exc-pay-info').textContent = `Paiement de ${m.nom} pour : ${excCotisations[excIdx].motif}`;
-  openModal('modal-exc-pay');
-}
-
-function openExcPay(excIdx, memberCode, memberNom, montant){
-  // Legacy wrapper — find member index
-  const mbs = window._excDetailMbs || getExcMembers(excCotisations[excIdx]);
-  const mi = mbs.findIndex(m=>m.code===memberCode);
-  window._excDetailIdx = excIdx;
-  window._excDetailMbs = mbs;
-  openExcPayByIdx(mi>=0?mi:0, montant);
+  if(!m || excIdx == null) return;
+  openExcPay(excIdx, m.code, (m.prenom?m.prenom+' ':'')+m.nom, montant);
 }
 
 function confirmExcPay(){
@@ -11070,9 +11057,8 @@ function applyModulesConfig(){
 }
 
 function renderConfigModules(){
-  // Vérifier que c'est bien le super admin "admin"
-  if(!currentAdmin||currentAdmin.role!=='superadmin'||currentAdmin.login!=='admin'){
-    _showDocToast('⛔ Accès réservé au Super Admin uniquement.');
+  if(!currentAdmin || currentAdmin.role!=='superadmin'){
+    _showDocToast('⛔ Accès réservé au Super Admin.');
     showPage('page-dashboard');
     return;
   }
