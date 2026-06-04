@@ -3419,25 +3419,47 @@ const ALL_ADMIN_MODULES = [
    CONFIGURATION GOOGLE SHEETS
    Collez ici l'URL de votre déploiement Apps Script
 ══════════════════════════════════════════ */
-let GAS_URL = "https://script.google.com/macros/s/AKfycbwWHsLpxMS-l9dQIHQ3GzcuifnE365qmWmtjjCjTHN3_6ewWNlPs4Xf5Ge0m95Nwh1qMw/exec"; // ← URL mise à jour
+let GAS_URL = "https://script.google.com/macros/s/AKfycbzH1CmM1IwBpCGry1-1qGlOhCNZ-zXWh_CYRpN75CixQZTRGTvSXXjjqT3tWMnb7Jneaw/exec"; // ← URL mise à jour
 
 // ─ Test de connectivité GAS
 async function testGasConnexion(){
-  if(!GAS_URL||GAS_URL.includes('VOTRE_URL')){alert('URL GAS non configurée.');return;}
+  if(!GAS_URL||GAS_URL.includes('VOTRE_URL')){
+    customConfirm('URL GAS non configurée dans le fichier HTML.\n\nRemplacez VOTRE_URL_GAS par l\'URL de votre déploiement.','Configuration requise','OK').then(()=>{});
+    return;
+  }
   const btn = document.getElementById('btn-test-gas');
-  if(btn){btn.textContent='⏳ Test…';btn.disabled=true;}
+  if(btn){btn.textContent='⏳ Test en cours…';btn.disabled=true;}
   try {
+    // Test 1 : ping sans token
+    const pingUrl = GAS_URL + '?action=ping';
+    const pingRes = await fetch(pingUrl, {method:'GET'});
+    const pingTxt = await pingRes.text();
+    let pingOk = false;
+    try{ const p=JSON.parse(pingTxt); pingOk=p.ok||p.status==='ok'; }catch(e){}
+
+    // Test 2 : ping via dbGet (avec token)
     const data = await dbGet('ping');
-    const ok = data && (data.status==='ok' || data.pong || data.timestamp);
+    const ok = data && (data.ok || data.status==='ok' || data.pong || data.timestamp);
+
     if(btn){btn.textContent='🔗 Tester la connexion GAS';btn.disabled=false;}
-    if(ok){
-      alert('✅ Connexion GAS OK\nURL : '+GAS_URL.substring(0,60)+'…');
+    if(ok || pingOk){
+      _showDocToast('✅ Connexion GAS OK — '+new Date().toLocaleTimeString('fr-FR'));
+      customConfirm(
+        '✅ CONNEXION GAS OPÉRATIONNELLE\n\nURL : '+GAS_URL.substring(0,60)+'…\nPing direct : '+(pingOk?'✅':'⚠️')+'\nPing sécurisé : '+(ok?'✅':'⚠️'),
+        'Test GAS','Fermer'
+      ).then(()=>{});
     } else {
-      alert('⚠️ GAS répond mais résultat inattendu.\nRéponse : '+JSON.stringify(data).substring(0,100));
+      customConfirm(
+        '⚠️ GAS répond mais résultat inattendu.\n\nRéponse : '+JSON.stringify(data).substring(0,150)+'\n\n→ Redéployez le GAS avec "Nouvelle version"',
+        'Diagnostic GAS','Fermer'
+      ).then(()=>{});
     }
   } catch(e) {
     if(btn){btn.textContent='🔗 Tester la connexion GAS';btn.disabled=false;}
-    alert('❌ Connexion échouée : '+e.message+'\nVérifiez l\'URL GAS.');
+    customConfirm(
+      '❌ CONNEXION ÉCHOUÉE\n\nErreur : '+e.message+'\n\nSolutions :\n1. Vérifiez l\'URL GAS dans le fichier HTML\n2. Redéployez le GAS → "Nouvelle version" → "Tout le monde"\n3. Testez l\'URL dans le navigateur : '+GAS_URL.substring(0,50)+'…?action=ping',
+      'Erreur GAS','Fermer'
+    ).then(()=>{});
   }
 }
 
@@ -7497,17 +7519,52 @@ async function _uploadFileChunks(sheetId, file){
   for(let i=0;i<total;i++){
     const chunk=data.substring(i*CHUNK,(i+1)*CHUNK);
     setP(Math.round((i/total)*75),'Chunk '+(i+1)+'/'+total+'…');
-    await dbPost('uploadDocumentChunk',{id:sheetId,chunk,idx:i,total});
+    // Utiliser GET JSONP pour confirmer la réception de chaque chunk
+    const chunkResult = await dbGet('uploadChunk', {
+      docId: sheetId,
+      chunk: encodeURIComponent(chunk),
+      idx: i,
+      total
+    });
+    if(chunkResult?.error){
+      console.warn('[Doc] Chunk '+i+' erreur:', chunkResult.error);
+    }
     await new Promise(res=>setTimeout(res,300));
   }
 
   setP(80,'Assemblage sur Google Drive…');
 
-  // Finaliser via fetch POST aussi (pas de timeout JSONP)
-  await dbPost('finalizeDocumentFile',{
-    id:sheetId, fileName:file.name,
-    fileType:file.type||'application/octet-stream', totalChunks:total
-  });
+  // Finaliser via GET JSONP pour avoir une vraie réponse (dbPost = no-cors, réponse ignorée)
+  let finalizeResult = null;
+  try{
+    finalizeResult = await dbGet('finalizeDocumentFile', {
+      docId: sheetId,
+      fileName: file.name,
+      fileType: file.type||'application/octet-stream',
+      totalChunks: total
+    });
+    console.log('[Doc] Finalize result:', finalizeResult);
+  }catch(e){
+    console.error('[Doc] Finalize error:', e);
+  }
+
+  // Si on a directement le fileUrl dans la réponse → pas besoin de poller
+  if(finalizeResult?.fileUrl){
+    if(progEl) progEl.style.display='none';
+    const di=documents.findIndex(d=>d.id===sheetId);
+    if(di>=0) documents[di].fileUrl=finalizeResult.fileUrl;
+    try{lsSet('mc_documents', JSON.stringify(documents));}catch(e){}
+    renderDocsAdmin();
+    const box=document.getElementById('doc-drive-link-box');
+    const lnk=document.getElementById('doc-drive-link');
+    if(box) box.style.display='block';
+    if(lnk){lnk.href=finalizeResult.fileUrl;lnk.textContent=finalizeResult.fileUrl;}
+    _showDocToast('✅ Fichier disponible sur Google Drive !');
+    setP(100,'Terminé !');
+    if(btn) btn.disabled=false;
+    _currentDocFile=null;
+    return;
+  }
 
   setP(85,'Attente confirmation Drive…');
 
