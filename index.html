@@ -3058,8 +3058,18 @@ html, body {
         <button class="scope-btn" id="scope-select-btn" onclick="setScopeSelect()">🎯 Sélection manuelle</button>
       </div>
       <div id="scope-select-panel" style="display:none">
-        <div style="font-size:12px;color:var(--gray-600);margin-bottom:6px">Cochez les membres concernés :</div>
-        <div style="max-height:200px;overflow-y:auto;border:1px solid var(--gray-300);border-radius:8px;padding:6px" id="exc-members-checklist"></div>
+        <div style="margin-bottom:8px;position:relative">
+          <input type="text" id="exc-member-search"
+            placeholder="🔍 Rechercher par nom, prénom ou code…"
+            oninput="filterExcMembersChecklist()"
+            style="width:100%;padding:8px 12px;border:1.5px solid var(--gray-300);border-radius:8px;font-size:13px"/>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button class="btn btn-sm btn-ghost" style="font-size:11px" onclick="selectAllExcMembers(true)">✅ Tout cocher</button>
+          <button class="btn btn-sm btn-ghost" style="font-size:11px" onclick="selectAllExcMembers(false)">☐ Tout décocher</button>
+          <span id="exc-selected-count" style="font-size:11px;color:var(--blue);margin-left:auto;align-self:center"></span>
+        </div>
+        <div style="max-height:220px;overflow-y:auto;border:1px solid var(--gray-300);border-radius:8px;padding:6px" id="exc-members-checklist"></div>
       </div>
     </div>
 
@@ -3091,7 +3101,7 @@ html, body {
 
 <!-- MODAL : ENREGISTRER PAIEMENT EXCEPTIONNEL -->
 <div class="modal-bg" id="modal-exc-pay">
-  <div class="modal" style="max-width:420px">
+  <div class="modal" style="max-width:440px">
     <div class="modal-title">
       <span>💳 Enregistrer un paiement exceptionnel</span>
       <button class="modal-close" onclick="closeModal('modal-exc-pay')">✕</button>
@@ -3099,16 +3109,35 @@ html, body {
     <input type="hidden" id="exc-pay-exc-idx"/>
     <input type="hidden" id="exc-pay-member-code"/>
     <div style="background:#EDE9FE;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#5B21B6" id="exc-pay-info"></div>
+
+    <!-- Recherche membre -->
+    <div class="field field-full" style="margin-bottom:12px">
+      <label>Membre *</label>
+      <div style="position:relative">
+        <input type="text" id="exc-pay-member-search"
+          placeholder="Rechercher par nom, prénom ou code…"
+          oninput="filterExcPayMembers()"
+          autocomplete="off"
+          style="width:100%;padding:8px 12px;border:1.5px solid var(--gray-300);border-radius:8px;font-size:13px"/>
+        <div id="exc-pay-member-results"
+          style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid var(--purple);border-top:none;border-radius:0 0 8px 8px;max-height:180px;overflow-y:auto;z-index:200"></div>
+      </div>
+      <div id="exc-pay-member-selected" style="display:none;margin-top:6px;padding:6px 10px;background:#F5F3FF;border-radius:6px;font-size:12px;color:#5B21B6;font-weight:600"></div>
+    </div>
+
     <div class="form-grid">
       <div class="field field-full">
         <label>Montant payé (FCFA)</label>
         <input type="number" id="exc-pay-amount" min="100" step="100"/>
       </div>
       <div class="field">
-        <label>Mode de paiement</label>
-        <select id="exc-pay-compte" class="select-compte" style="margin-bottom:8px">
+        <label>Compte destinataire</label>
+        <select id="exc-pay-compte" class="select-compte">
           <option value="">— Compte destinataire —</option>
         </select>
+      </div>
+      <div class="field">
+        <label>Mode de paiement</label>
         <select id="exc-pay-mode">
           <option>MTN Mobile Money</option><option>Orange Money</option>
           <option>Wave</option><option>Espèces</option><option>Virement</option>
@@ -5209,7 +5238,7 @@ function showPage(id){
   if(id==='page-projets-member')      renderProjetsMemeber();
   if(id==='page-bilan-ag')          { initBilanAG(); }
   if(id==='page-admins')             initArchivageUI();
-  if(id==='page-config-modules'){     if(currentAdmin?.role==='superadmin'&&currentAdmin?.login==='admin') renderConfigModules(); else {_showDocToast('⛔ Accès réservé au compte Super Admin uniquement.');showPage('page-dashboard');}}
+  if(id==='page-config-modules'){     if(currentAdmin?.role==='superadmin') renderConfigModules(); else {_showDocToast('⛔ Accès réservé au Super Admin.');showPage('page-dashboard');}}
   if(id==='page-prets-member')       renderPretsMember();
   if(id==='page-patrimoine-member') renderPatrimoineMember();
   if(id==='page-sms-admin') { updateSmsDestinataires && updateSmsDestinataires(); }
@@ -6569,13 +6598,82 @@ function setScopeSelect(){
   buildExcChecklist([]);
 }
 function buildExcChecklist(selectedCodes){
-  const panel=document.getElementById('exc-members-checklist');
-  panel.innerHTML=members.filter(m=>m.actif).map(m=>`
-    <label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;border-radius:5px;font-size:13px">
-      <input type="checkbox" value="${m.code}" ${selectedCodes.includes(m.code)?'checked':''} style="width:15px;height:15px;accent-color:#7C3AED">
-      <span style="font-weight:500">${m.nom}</span>
-      <span style="font-size:11px;color:var(--gray-400);font-family:var(--mono)">${m.code}</span>
+  const panel = document.getElementById('exc-members-checklist');
+  const search = (document.getElementById('exc-member-search')?.value || '').toLowerCase();
+  const list = members.filter(m => m.actif && (!search ||
+    (m.nom||'').toLowerCase().includes(search) ||
+    (m.prenom||'').toLowerCase().includes(search) ||
+    (m.code||'').toLowerCase().includes(search)
+  ));
+  panel.innerHTML = list.map(m=>`
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 6px;cursor:pointer;border-radius:6px;font-size:13px;transition:background .1s" onmouseover="this.style.background='#F5F3FF'" onmouseout="this.style.background=''">
+      <input type="checkbox" value="${m.code}" ${selectedCodes.includes(m.code)?'checked':''} onchange="updateExcSelectedCount()" style="width:15px;height:15px;accent-color:#7C3AED;flex-shrink:0">
+      <span style="font-weight:500">${(m.prenom?m.prenom+' ':'')+m.nom}</span>
+      <span style="font-size:11px;color:var(--gray-400);font-family:var(--mono);margin-left:auto">${m.code}</span>
     </label>`).join('');
+  updateExcSelectedCount();
+}
+function filterExcMembersChecklist(){
+  const checked = [...document.querySelectorAll('#exc-members-checklist input:checked')].map(cb=>cb.value);
+  buildExcChecklist(checked);
+}
+function updateExcSelectedCount(){
+  const n = document.querySelectorAll('#exc-members-checklist input:checked').length;
+  const el = document.getElementById('exc-selected-count');
+  if(el) el.textContent = n ? n+' membre(s) sélectionné(s)' : '';
+}
+function selectAllExcMembers(val){
+  document.querySelectorAll('#exc-members-checklist input[type=checkbox]').forEach(cb=>cb.checked=val);
+  updateExcSelectedCount();
+}
+
+// ── Recherche membre dans le modal de paiement exceptionnel ──
+function filterExcPayMembers(){
+  const q = (document.getElementById('exc-pay-member-search')?.value||'').toLowerCase().trim();
+  const res = document.getElementById('exc-pay-member-results');
+  if(!res) return;
+  if(!q){ res.style.display='none'; return; }
+  const excIdx = parseInt(document.getElementById('exc-pay-exc-idx')?.value||'-1');
+  const exc = excIdx>=0 ? excCotisations[excIdx] : null;
+  // Filtrer selon le scope de la cotisation
+  let pool = members.filter(m=>m.actif);
+  if(exc){
+    const sc = getExcScope(exc);
+    if(sc!=='all') pool = pool.filter(m=>sc.includes(m.code));
+  }
+  const matches = pool.filter(m=>
+    (m.nom||'').toLowerCase().includes(q)||
+    (m.prenom||'').toLowerCase().includes(q)||
+    (m.code||'').toLowerCase().includes(q)
+  ).slice(0,8);
+  if(!matches.length){ res.style.display='none'; return; }
+  res.style.display='block';
+  res.innerHTML = matches.map(m=>`
+    <div onclick="selectExcPayMember('${m.code}')"
+      style="padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;border-bottom:1px solid #F0F2F7"
+      onmouseover="this.style.background='#F5F3FF'" onmouseout="this.style.background=''">
+      <span><strong>${(m.prenom?m.prenom+' ':'')+m.nom}</strong></span>
+      <span style="font-family:var(--mono);font-size:11px;color:#7C3AED">${m.code}</span>
+    </div>`).join('');
+}
+function selectExcPayMember(code){
+  const m = getMemberByCode(code);
+  if(!m) return;
+  document.getElementById('exc-pay-member-code').value = code;
+  document.getElementById('exc-pay-member-search').value = '';
+  document.getElementById('exc-pay-member-results').style.display='none';
+  // Afficher le membre sélectionné
+  const sel = document.getElementById('exc-pay-member-selected');
+  if(sel){
+    sel.style.display='block';
+    sel.innerHTML = '✅ <strong>'+(m.prenom?m.prenom+' ':'')+m.nom+'</strong> <span style="font-family:var(--mono);font-size:11px">'+m.code+'</span>';
+  }
+  // Pré-remplir le montant si cotisation connue
+  const excIdx = parseInt(document.getElementById('exc-pay-exc-idx')?.value||'-1');
+  if(excIdx>=0){
+    const exc = excCotisations[excIdx];
+    if(exc) document.getElementById('exc-pay-amount').value = exc.montant||'';
+  }
 }
 
 function saveExc(){
@@ -6707,11 +6805,25 @@ function openExcDetail(i){
 
 function openExcPay(excIdx, memberCode, memberNom, montant){
   document.getElementById('exc-pay-exc-idx').value=excIdx;
-  document.getElementById('exc-pay-member-code').value=memberCode;
+  document.getElementById('exc-pay-member-code').value=memberCode||'';
   document.getElementById('exc-pay-amount').value=montant;
   document.getElementById('exc-pay-date').value=new Date().toISOString().split('T')[0];
   document.getElementById('exc-pay-ok').style.display='none';
-  document.getElementById('exc-pay-info').textContent=`Paiement de ${memberNom} pour : ${excCotisations[excIdx].motif}`;
+  document.getElementById('exc-pay-info').textContent=`Paiement pour : ${excCotisations[excIdx]?.motif||'—'}`;
+  // Init recherche membre
+  const searchEl=document.getElementById('exc-pay-member-search');
+  const selEl=document.getElementById('exc-pay-member-selected');
+  const resEl=document.getElementById('exc-pay-member-results');
+  if(searchEl) searchEl.value='';
+  if(resEl) resEl.style.display='none';
+  if(selEl){
+    if(memberCode){
+      const mb=getMemberByCode(memberCode);
+      selEl.style.display='block';
+      selEl.innerHTML='✅ <strong>'+(mb?(mb.prenom?mb.prenom+' ':'')+mb.nom:memberCode)+'</strong> <span style="font-family:var(--mono);font-size:11px">'+(mb?mb.code:memberCode)+'</span>';
+    } else { selEl.style.display='none'; }
+  }
+  updateComptesSelects();
   openModal('modal-exc-pay');
 }
 
