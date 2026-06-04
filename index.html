@@ -6753,36 +6753,42 @@ function openExcDetail(i){
   const paid=excPaidCount(exc);
   const pct=mbs.length?Math.round(paid/mbs.length*100):0;
   document.getElementById('exc-detail-title').textContent='⚡ '+exc.motif;
-
-  // Store member list for this detail view so onclick can use numeric index
   window._excDetailIdx = i;
   window._excDetailMbs = mbs;
 
-  const rows=mbs.map((m, mi)=>{
-    const isPaid=excMemberPaid(exc,m.code);
-    const amount=(exc.paiements&&exc.paiements[m.code])||0;
-    return `<div class="exc-member-row">
-      <div class="exc-check ${isPaid?'exc-check-paid':'exc-check-unpaid'}">${isPaid?'✓':'!'}</div>
-      <div style="flex:1">
-        <div style="font-weight:500;font-size:13px">${m.nom}</div>
-        <div style="font-size:11px;color:var(--gray-500);font-family:var(--mono)">${m.code} · ${m.fonction||'—'}</div>
-      </div>
-      <div style="text-align:right;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-        ${isPaid
-          ?`<span class="pmt-status-paid">✓ Payé — ${amount.toLocaleString('fr-FR')} F</span>
-            <button class="btn btn-danger btn-sm" title="Annuler ce paiement" onclick="cancelExcPayByIdx(${mi})">✕ Annuler</button>`
-          :`<span class="pmt-status-unpaid">En attente</span>`
-        }
-        ${exc.statut==='active'&&!isPaid
-          ?`<button class="btn btn-ghost btn-sm" onclick="openExcPayByIdx(${mi},${exc.montant})">💳 Encaisser</button>`
-          :''
-        }
-      </div>
-    </div>`;
-  }).join('');
+  const buildRows=(q='')=>{
+    const filtered = q ? mbs.filter(m=>
+      (m.nom||'').toLowerCase().includes(q.toLowerCase())||
+      (m.prenom||'').toLowerCase().includes(q.toLowerCase())||
+      (m.code||'').toLowerCase().includes(q.toLowerCase())
+    ) : mbs;
+    return filtered.map((m,ri)=>{
+      const mi=mbs.indexOf(m);
+      const isPaid=excMemberPaid(exc,m.code);
+      const amount=(exc.paiements&&exc.paiements[m.code])||0;
+      return `<div class="exc-member-row">
+        <div class="exc-check ${isPaid?'exc-check-paid':'exc-check-unpaid'}">${isPaid?'✓':'!'}</div>
+        <div style="flex:1">
+          <div style="font-weight:500;font-size:13px">${(m.prenom?m.prenom+' ':'')+m.nom}</div>
+          <div style="font-size:11px;color:var(--gray-500);font-family:var(--mono)">${m.code} · ${m.fonction||'—'}</div>
+        </div>
+        <div style="text-align:right;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          ${isPaid
+            ?`<span class="pmt-status-paid">✓ Payé — ${amount.toLocaleString('fr-FR')} F</span>
+              <button class="btn btn-danger btn-sm" title="Annuler ce paiement" onclick="cancelExcPayByIdx(${mi})">✕ Annuler</button>`
+            :`<span class="pmt-status-unpaid">En attente</span>`
+          }
+          ${exc.statut==='active'&&!isPaid
+            ?`<button class="btn btn-ghost btn-sm" onclick="openExcPayByIdx(${mi},${exc.montant})">💳 Encaisser</button>`
+            :''
+          }
+        </div>
+      </div>`;
+    }).join('') || '<div style="padding:20px;text-align:center;color:var(--gray-400);font-size:13px">Aucun membre trouvé</div>';
+  };
 
   document.getElementById('exc-detail-content').innerHTML=`
-    <div class="exc-card" style="margin-bottom:16px">
+    <div class="exc-card" style="margin-bottom:14px">
       <div style="font-size:16px;font-weight:600;margin-bottom:4px">${exc.motif}</div>
       ${exc.desc?`<div style="font-size:13px;opacity:0.7;margin-bottom:8px">${exc.desc}</div>`:''}
       <div style="display:flex;gap:16px;font-size:12px;opacity:0.75;flex-wrap:wrap">
@@ -6799,10 +6805,38 @@ function openExcDetail(i){
         <strong>${pct}%</strong>
       </div>
     </div>
-    <div style="font-size:13px;font-weight:600;color:var(--navy);margin-bottom:10px">Liste des membres concernés</div>
-    <div style="max-height:360px;overflow-y:auto">${rows}</div>`;
 
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:13px;font-weight:600;color:var(--navy)">Liste des membres concernés</div>
+      <div style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--gray-500)">
+        <span style="color:#16A34A;font-weight:600">✓ ${paid} payé(s)</span>
+        <span>·</span>
+        <span style="color:#D97706;font-weight:600">! ${mbs.length-paid} en attente</span>
+      </div>
+    </div>
+
+    <!-- Barre de recherche -->
+    <div style="position:relative;margin-bottom:10px">
+      <input type="text" id="exc-detail-search"
+        placeholder="🔍 Rechercher par nom, prénom ou code…"
+        oninput="filterExcDetail()"
+        style="width:100%;padding:8px 12px 8px 34px;border:1.5px solid var(--gray-300);border-radius:8px;font-size:13px"/>
+      <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:14px;pointer-events:none">🔍</span>
+    </div>
+
+    <div id="exc-detail-rows" style="max-height:340px;overflow-y:auto">${buildRows()}</div>`;
+
+  // Stocker buildRows pour l'utiliser dans le filtre
+  window._excDetailBuildRows = buildRows;
   openModal('modal-exc-detail');
+}
+
+function filterExcDetail(){
+  const q = document.getElementById('exc-detail-search')?.value || '';
+  const container = document.getElementById('exc-detail-rows');
+  if(container && window._excDetailBuildRows){
+    container.innerHTML = window._excDetailBuildRows(q);
+  }
 }
 
 function openExcPay(excIdx, memberCode, memberNom, montant){
