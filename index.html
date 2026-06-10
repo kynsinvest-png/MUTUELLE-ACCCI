@@ -1150,15 +1150,35 @@ html, body {
               </div>
               <input type="hidden" id="pay-code"/>
               <!-- Membre sélectionné -->
-              <div id="pay-selected-bar" style="display:none;margin-top:8px;padding:10px 14px;background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;display:flex;align-items:center;gap:12px">
-                <div>
-                  <div style="font-size:13px;font-weight:700;color:var(--navy)" id="pay-selected-nom">—</div>
-                  <div style="font-size:11px;color:var(--gray-500);margin-top:1px">
-                    Code : <span id="pay-selected-code" style="font-family:var(--mono);font-weight:600">—</span>
-                    · Quota : <span id="pay-selected-quota">—</span> FCFA/mois
+              <div id="pay-selected-bar" style="display:none;margin-top:8px;padding:10px 14px;background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px">
+                <div style="display:flex;align-items:center;gap:12px">
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:700;color:var(--navy)" id="pay-selected-nom">—</div>
+                    <div style="font-size:11px;color:var(--gray-500);margin-top:1px">
+                      Code : <span id="pay-selected-code" style="font-family:var(--mono);font-weight:600">—</span>
+                    </div>
                   </div>
+                  <button onclick="clearPayMembre()" style="background:none;border:none;cursor:pointer;color:#9CA3AF;font-size:18px;line-height:1">✕</button>
                 </div>
-                <button onclick="clearPayMembre()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:#9CA3AF;font-size:18px;line-height:1">✕</button>
+                <!-- Quota éditable -->
+                <div style="margin-top:10px;padding-top:10px;border-top:1px solid #BFDBFE">
+                  <div style="font-size:12px;color:#1D4ED8;font-weight:600;margin-bottom:6px">📋 Quota mensuel de ce membre</div>
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <div style="display:flex;align-items:center;gap:6px;flex:1">
+                      <input type="number" id="pay-quota-edit"
+                        placeholder="Quota FCFA" min="100" step="100"
+                        oninput="onPayQuotaChange()"
+                        style="width:130px;padding:6px 10px;border:1.5px solid #93C5FD;border-radius:6px;font-size:13px;font-weight:600;color:var(--navy)"/>
+                      <span style="font-size:12px;color:#6B7280">FCFA / mois</span>
+                    </div>
+                    <button onclick="savePayQuota()"
+                      id="pay-quota-save-btn"
+                      style="display:none;padding:6px 12px;background:#1D4ED8;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">
+                      💾 Mettre à jour le quota
+                    </button>
+                  </div>
+                  <div id="pay-quota-status" style="font-size:11px;margin-top:5px;color:#6B7280"></div>
+                </div>
               </div>
             </div>
             <div class="field">
@@ -2221,8 +2241,8 @@ html, body {
                 <div class="field">
                   <label>Mois de début — <span id="brand-annee-label">2026</span></label>
                   <select id="brand-mois-debut" onchange="applyStartMonthConfig()">
-                    <option value="0">Janvier</option><option value="1">Février</option>
-                    <option value="2" selected>Mars</option><option value="3">Avril</option>
+                    <option value="0" selected>Janvier</option><option value="1">Février</option>
+                    <option value="2">Mars</option><option value="3">Avril</option>
                     <option value="4">Mai</option><option value="5">Juin</option>
                     <option value="6">Juillet</option><option value="7">Août</option>
                     <option value="8">Septembre</option><option value="9">Octobre</option>
@@ -2255,7 +2275,18 @@ html, body {
                     <option value="mois_suivant">Mois suivant l'adhésion = 1er mois de cotisation</option>
                   </select>
                   <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Cette règle s'applique uniquement l'année d'adhésion. Elle peut être surchargée individuellement par membre.</div>
-                  <span style="font-size:11px;color:var(--gray-500);margin-top:3px;display:block">Montant reporté des exercices antérieurs — inclus dans le solde trésorerie.</span>
+                </div>
+                <div class="field field-full">
+                  <label>📱 Indicatif téléphonique par défaut</label>
+                  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <select id="brand-tel-indicatif" style="flex:1;min-width:200px" onchange="onBrandIndicatifChange()">
+                    </select>
+                    <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;font-size:13px">
+                      <span id="brand-tel-flag-preview" style="font-size:18px">🇨🇮</span>
+                      <span id="brand-tel-code-preview" style="font-weight:700;color:#5B21B6;font-family:var(--mono)">+225</span>
+                    </div>
+                  </div>
+                  <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Indicatif affiché par défaut lors de l'enregistrement d'un nouveau membre.</div>
                 </div>
 
                 <!-- HSMS API Config — réservé Super Admin (user: admin) uniquement -->
@@ -3186,8 +3217,29 @@ html, body {
       </div>
       <div class="field">
         <label>Numéro de téléphone</label>
-        <input type="tel" id="m-tel" placeholder="Ex: 0712345678" oninput="formatTelInput(this)" onblur="formatTelInput(this)"/>
-        <span style="font-size:11px;color:var(--gray-400);margin-top:2px">Le préfixe +225 sera ajouté automatiquement</span>
+        <div style="display:flex;gap:6px;align-items:stretch">
+          <!-- Sélecteur indicatif pays -->
+          <div style="position:relative;flex-shrink:0">
+            <div id="tel-flag-btn" onclick="toggleTelDropdown()" style="display:flex;align-items:center;gap:5px;padding:0 10px;height:100%;min-height:40px;border:1.5px solid var(--gray-300);border-radius:var(--radius);cursor:pointer;background:#fff;font-size:13px;white-space:nowrap;user-select:none">
+              <span id="tel-flag-display" style="font-size:11px;font-weight:700;color:var(--navy);background:#E0F2FE;padding:2px 5px;border-radius:4px">CI</span>
+              <span id="tel-code-display" style="font-weight:600;color:var(--navy)">+225</span>
+              <span style="font-size:10px;color:var(--gray-400)">▼</span>
+            </div>
+            <div id="tel-dropdown" style="display:none;position:absolute;top:100%;left:0;width:280px;background:#fff;border:1.5px solid var(--gray-300);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:500;max-height:300px;overflow:hidden">
+              <div style="padding:8px">
+                <input type="text" id="tel-country-search" placeholder="🔍 Rechercher un pays…"
+                  oninput="filterTelCountries()"
+                  style="width:100%;padding:7px 10px;border:1.5px solid var(--gray-300);border-radius:6px;font-size:12px"/>
+              </div>
+              <div id="tel-country-list" style="max-height:230px;overflow-y:auto"></div>
+            </div>
+          </div>
+          <!-- Champ numéro -->
+          <input type="tel" id="m-tel" placeholder="0712345678"
+            oninput="onTelInput()"
+            style="flex:1"/>
+        </div>
+        <span id="tel-preview" style="font-size:11px;color:var(--blue);margin-top:3px;display:block"></span>
       </div>
       <div class="field">
         <label>Email</label>
@@ -3242,7 +3294,24 @@ html, body {
       </div>
       <div class="field">
         <label>Versement initial (FCFA)</label>
-        <input type="number" id="m-verse" value="1000" min="1000" step="1000"/>
+        <input type="number" id="m-verse" value="0" min="0" step="500" placeholder="0"/>
+        <div style="font-size:11px;color:var(--gray-400);margin-top:3px">Saisissez 0 si aucun versement à l'adhésion. Le compte n'est obligatoire que si versement > 0.</div>
+      </div>
+      <div class="field">
+        <label>Compte à créditer <span style="color:#DC2626">*</span></label>
+        <select id="m-compte" class="select-compte" required style="border-color:var(--gray-300)">
+          <option value="">— Sélectionner un compte —</option>
+        </select>
+        <div id="m-compte-err" style="display:none;font-size:11px;color:#DC2626;margin-top:3px">⚠️ Veuillez sélectionner un compte à créditer</div>
+      </div>
+      <div class="field">
+        <label>Mode de paiement</label>
+        <select id="m-mode-paiement">
+          <option value="especes">Espèces</option>
+          <option value="mobile_money">Mobile Money</option>
+          <option value="virement">Virement bancaire</option>
+          <option value="cheque">Chèque</option>
+        </select>
       </div>
       <div class="field">
         <label>Date d'adhésion</label>
@@ -3367,7 +3436,9 @@ const MONTH_IDX_ALL = Object.fromEntries(ALL_MONTHS.map((m,i)=>[m,i]));
 // Pour 2026, les adhésions ont commencé en Mars (index 2)
 // Pour 2027 et suivantes, l'année commence en Janvier (index 0)
 const ANNEE_CONFIG = {
-  '2026': { debutIdx: 0 },  // sera mis à jour depuis branding.debutMois
+  '2024': { debutIdx: 0 },
+  '2025': { debutIdx: 0 },
+  '2026': { debutIdx: 0 },
   '2027': { debutIdx: 0 },
   '2028': { debutIdx: 0 },
   '2029': { debutIdx: 0 },
@@ -3419,7 +3490,7 @@ const ALL_ADMIN_MODULES = [
    CONFIGURATION GOOGLE SHEETS
    Collez ici l'URL de votre déploiement Apps Script
 ══════════════════════════════════════════ */
-let GAS_URL = "https://script.google.com/macros/s/AKfycbzH1CmM1IwBpCGry1-1qGlOhCNZ-zXWh_CYRpN75CixQZTRGTvSXXjjqT3tWMnb7Jneaw/exec"; // ← URL mise à jour
+let GAS_URL = "https://script.google.com/macros/s/AKfycbzQ3b3ApPDijo5KzbNm76vkljaC8jgTZj_awhpBouvV4eAL1KeST1UO3grBA5kNC7hHYA/exec"; // ← URL mise à jour
 
 // ─ Test de connectivité GAS
 async function testGasConnexion(){
@@ -4148,7 +4219,20 @@ async function loadFromSheets(){
     Object.assign(branding, data.branding);
     // Restaurer la config du mois de début pour l'année configurée
     if(branding.debutMois !== undefined && branding.annee){
-      ANNEE_CONFIG[String(branding.annee)] = {debutIdx: parseInt(branding.debutMois)};
+      let debutVal = parseInt(branding.debutMois);
+      // Si debutMoisManual n'est pas true → toujours forcer à 0 (Janvier)
+      // L'ancienne valeur 2 (Mars) était un bug du HTML par défaut
+      if(!branding.debutMoisManual) debutVal = 0;
+      branding.debutMois = debutVal;
+      // Appliquer à toutes les années connues
+      Object.keys(ANNEE_CONFIG).forEach(yr => {
+        ANNEE_CONFIG[yr] = {debutIdx: debutVal};
+      });
+    } else {
+      // Pas de config → Janvier pour toutes les années
+      Object.keys(ANNEE_CONFIG).forEach(yr => {
+        ANNEE_CONFIG[yr] = {debutIdx: 0};
+      });
     }
     // Restaurer les années sauvegardées manuellement (fusionner sans écraser)
     if(branding.annees){
@@ -4401,9 +4485,34 @@ function getMoisPaidList(m, annee){
 }
 
 function getSolde(m, annee){
-  const yr = String(annee || _anneeActive);
-  const nbDus = getNbMoisDus(m, yr);
-  return (m.quota * nbDus) - getTotalPaid(m, yr);
+  // Calcul correct : total dû (quota × mois dus) - total payé
+  // Si le membre a un historique de changement de quota (quotaHistory),
+  // on calcule le dû par période avec le bon quota
+  const yr      = String(annee || _anneeActive);
+  const nbDus   = getNbMoisDus(m, yr);
+  const paid    = getTotalPaid(m, yr);
+
+  // Calculer le total dû selon l'historique de quota si disponible
+  let totalDu = 0;
+  if(m.quotaHistory && Array.isArray(m.quotaHistory) && m.quotaHistory.length > 0){
+    // Reconstruire mois par mois avec le bon quota
+    const moisList = getMonthsForYear(yr);
+    const MOIS_IDX = {Janvier:1,Février:2,Mars:3,Avril:4,Mai:5,Juin:6,Juillet:7,Août:8,Septembre:9,Octobre:10,Novembre:11,Décembre:12};
+    const moisDus  = getMoisDusJusquAuMoisActuel(m, yr).map(mo=>MOIS_IDX[mo]||0);
+    moisDus.forEach(moisNum=>{
+      const dateRef = yr+'-'+String(moisNum).padStart(2,'0')+'-01';
+      // Trouver le quota en vigueur ce mois-là
+      let quotaMois = m.quotaHistory[0]?.quota || m.quota;
+      for(const h of m.quotaHistory){
+        if(h.date <= dateRef) quotaMois = h.quota;
+      }
+      totalDu += quotaMois;
+    });
+  } else {
+    totalDu = m.quota * nbDus;
+  }
+
+  return totalDu - paid;
 }
 
 // Affichage compact d'un montant — exact si < 1000, sinon en K
@@ -5724,13 +5833,20 @@ function openAddMember(){
   document.getElementById('m-naissance').value='';
   document.getElementById('m-situation').value='';
   document.getElementById('m-quota').value=1000;
-  document.getElementById('m-verse').value=1000;
+  document.getElementById('m-verse').value=0;
   document.getElementById('m-date').value='2026-03-01';
   document.getElementById('m-code').value='';
   document.getElementById('code-slip').style.display='none';
   document.getElementById('modal-err').style.display='none';
   generateCode();
   _initDroitAdhesionField(false);
+  applyDefaultTelIndicatif();
+  document.getElementById('m-tel').value='';
+  updateComptesSelects();
+  const mCompte = document.getElementById('m-compte');
+  if(mCompte){ mCompte.value=''; mCompte.style.borderColor=''; }
+  const mCompteErr = document.getElementById('m-compte-err');
+  if(mCompteErr) mCompteErr.style.display='none';
   openModal('modal-member');
 }
 
@@ -5743,7 +5859,7 @@ function openEditMember(idx){
   if(document.getElementById('m-prenom')) document.getElementById('m-prenom').value=m.prenom||'';
   document.getElementById('m-fonction').value=m.fonction||'';
   document.getElementById('m-service').value=m.service||'';
-  document.getElementById('m-tel').value=m.tel||'';
+  setTelValue(m.tel||'');
   document.getElementById('m-email').value=m.email||'';
   document.getElementById('m-naissance').value=m.naissance||'';
   document.getElementById('m-situation').value=m.situation||'';
@@ -5818,13 +5934,16 @@ function _initDroitAdhesionField(checked){
   const badge   = document.getElementById('m-droit-montant-badge');
   const lbl     = document.getElementById('m-droit-label');
   if(!field) return;
-  if(!montant){
-    field.style.display='none'; return;
-  }
+  // Toujours afficher le champ — l'admin choisit de cocher ou non
   field.style.display='block';
   if(cb)    cb.checked = !!checked;
-  if(badge) badge.textContent = fmt(montant);
-  if(lbl)   lbl.textContent   = `Droit d'adhésion payé (${fmt(montant)})`;
+  if(montant > 0){
+    if(badge) badge.textContent = fmt(montant)+' FCFA';
+    if(lbl)   lbl.textContent   = `Droit d'adhésion payé (${fmt(montant)} FCFA)`;
+  } else {
+    if(badge) badge.textContent = '';
+    if(lbl)   lbl.textContent   = `Droit d'adhésion payé (montant non configuré)`;
+  }
 }
 
 function saveMember(){
@@ -5832,7 +5951,7 @@ function saveMember(){
   const prenom   = '';
   const fonction = document.getElementById('m-fonction').value.trim();
   const service  = document.getElementById('m-service').value.trim();
-  const tel      = formatTel(document.getElementById('m-tel').value.trim());
+  const tel      = getTelFull() || document.getElementById('m-tel').value.trim();
   const email    = document.getElementById('m-email').value.trim();
   const naissance= document.getElementById('m-naissance').value;
   const situation= document.getElementById('m-situation').value;
@@ -5840,7 +5959,7 @@ function saveMember(){
   const enfants  = document.getElementById('m-enfants')?.value!==''?parseInt(document.getElementById('m-enfants').value):null;
   const code     = document.getElementById('m-code').value.trim().toUpperCase();
   const quota    = parseInt(document.getElementById('m-quota').value)||1000;
-  const verse    = parseInt(document.getElementById('m-verse').value)||1000;
+  const verse    = parseInt(document.getElementById('m-verse').value)||0;
   const date     = document.getElementById('m-date').value;
   const idx      = parseInt(document.getElementById('edit-member-idx').value);
   const errEl    = document.getElementById('modal-err');
@@ -5850,18 +5969,80 @@ function saveMember(){
   if(!code||code.length<4){errMsg.textContent='Le code doit avoir au moins 4 caractères.';errEl.style.display='flex';return;}
   const duplicate=members.find((m,i)=>m.code===code&&i!==idx);
   if(duplicate){errMsg.textContent=`Ce code est déjà utilisé par ${duplicate.nom}.`;errEl.style.display='flex';return;}
+
+  // Validation compte obligatoire (seulement pour nouveau membre avec versement)
+  const compteEl  = document.getElementById('m-compte');
+  const compteErr = document.getElementById('m-compte-err');
+  const compteId  = compteEl?.value||'';
+  if(idx===-1 && verse > 0 && !compteId){
+    if(compteErr) compteErr.style.display='block';
+    if(compteEl)  compteEl.style.borderColor='#DC2626';
+    errMsg.textContent='Veuillez sélectionner un compte à créditer pour le versement initial.';
+    errEl.style.display='flex';
+    return;
+  }
+  if(compteErr) compteErr.style.display='none';
+  if(compteEl)  compteEl.style.borderColor='';
   errEl.style.display='none';
 
+  const modePaiement = document.getElementById('m-mode-paiement')?.value || 'especes';
   const droitPaye = !!(document.getElementById('m-droit-paye')?.checked);
   const droitMontant = droitPaye ? (branding.droitAdhesion||0) : 0;
   const regleCotisation = document.getElementById('m-regle-cotisation')?.value || 'defaut';
   const extraFields = {email, naissance, situation, ville, enfants, droitPaye, droitMontant, regleCotisation};
+
+  const nomComplet = (prenom?(prenom+' '):'')+nom;
 
   if(idx===-1){
     const maxNum = members.length > 0 ? Math.max(...members.map(m=>Number(m.num)||0)) : 0;
     const nm={num:maxNum+1, nom, prenom, fonction, service, tel, code, quota, verse, date, actif:true, motif:'', motifDate:'', motifComment:'', ...extraFields};
     members.push(nm);
     dbPost('saveMember', nm);
+    // Créditer le compte avec le versement initial
+    if(compteId && verse > 0){
+      enregistrerTransaction({
+        compteId, type:'entree', montant:verse,
+        libelle:'Versement initial — '+nomComplet+' ('+code+')'+(droitPaye?' + Droit d\'adhésion':''),
+        source:'adhesion', sourceId:code, date, mode:modePaiement,
+      });
+      // Créer le(s) paiement(s) dans PAIEMENTS pour que le rapport AG les prenne en compte
+      const dateObj   = new Date(date);
+      const moisAdh   = dateObj.getMonth()+1; // 1-12
+      const anneeAdh  = String(dateObj.getFullYear());
+      const nomMoisAdh = ALL_MONTHS[dateObj.getMonth()]; // ex: 'Janvier'
+      // Calculer combien de mois couvre le versement initial
+      const nbMoisVerses = quota > 0 ? Math.min(Math.floor(verse / quota), 12) : 0;
+      for(let i=0; i<nbMoisVerses; i++){
+        const moisPay = moisAdh + i;
+        const moisReel = ((moisPay - 1) % 12) + 1;
+        const anneeReel = moisPay > 12 ? String(Number(anneeAdh)+1) : anneeAdh;
+        const payRecord = {
+          id:        'pay_'+code+'_'+moisReel+'_'+anneeReel,
+          memberCode: code,
+          mois:       moisReel,
+          annee:      anneeReel,
+          montant:    quota,
+          date:       date,
+          mode:       modePaiement,
+          compteId:   compteId,
+          source:     'versement_initial',
+        };
+        // Vérifier que ce mois n'est pas déjà payé
+        const alreadyPaid = payments.some(p=>String(p.memberCode)===code && Number(p.mois)===moisReel && String(p.annee)===anneeReel);
+        if(!alreadyPaid){
+          payments.push(payRecord);
+          dbPost('savePaiement', payRecord);
+        }
+      }
+      // Si droit d'adhésion
+      if(droitPaye && droitMontant > 0){
+        enregistrerTransaction({
+          compteId, type:'entree', montant:droitMontant,
+          libelle:'Droit d\'adhésion — '+nomComplet+' ('+code+')',
+          source:'droit_adhesion', sourceId:code, date, mode:modePaiement,
+        });
+      }
+    }
   } else {
     members[idx]={...members[idx], nom, prenom, fonction, service, tel, code, quota, verse, date, ...extraFields};
     dbPost('updateMember', members[idx]);
@@ -6187,18 +6368,85 @@ function selectPayMembre(code){
   document.getElementById('pay-members-dropdown').style.display='none';
   // Afficher barre sélection
   const bar = document.getElementById('pay-selected-bar');
-  if(bar) bar.style.display='flex';
+  if(bar) bar.style.display='block';
   const nomEl   = document.getElementById('pay-selected-nom');
   const codeEl  = document.getElementById('pay-selected-code');
-  const quotaEl = document.getElementById('pay-selected-quota');
-  if(nomEl)   nomEl.textContent   = m.nom;
-  if(codeEl)  codeEl.textContent  = m.code;
-  if(quotaEl) quotaEl.textContent = (m.quota||0).toLocaleString('fr-FR');
+  if(nomEl)  nomEl.textContent  = (m.prenom?m.prenom+' ':'')+m.nom;
+  if(codeEl) codeEl.textContent = m.code;
+  // Charger le quota éditable
+  const quotaInput = document.getElementById('pay-quota-edit');
+  const quotaBtn   = document.getElementById('pay-quota-save-btn');
+  const quotaStatus= document.getElementById('pay-quota-status');
+  if(quotaInput){ quotaInput.value = m.quota||1000; }
+  if(quotaBtn)  { quotaBtn.style.display='none'; }
+  if(quotaStatus){ quotaStatus.textContent='Quota actuel : '+(m.quota||0).toLocaleString('fr-FR')+' FCFA/mois'; quotaStatus.style.color='#6B7280'; }
   // Pré-remplir montant avec quota
   const amtEl = document.getElementById('pay-amount');
   if(amtEl && m.quota) amtEl.value = m.quota;
   updatePayMonthGrid();
   checkPayAmount();
+}
+
+function onPayQuotaChange(){
+  const code = document.getElementById('pay-code')?.value;
+  const m = members.find(x=>x.code===code);
+  if(!m) return;
+  const newQuota = parseInt(document.getElementById('pay-quota-edit')?.value||'0');
+  const btn = document.getElementById('pay-quota-save-btn');
+  const status = document.getElementById('pay-quota-status');
+  if(newQuota > 0 && newQuota !== m.quota){
+    if(btn) btn.style.display='block';
+    if(status){ status.textContent='⚠️ Quota modifié — cliquez "Mettre à jour" pour sauvegarder'; status.style.color='#D97706'; }
+  } else {
+    if(btn) btn.style.display='none';
+    if(status){ status.textContent='Quota actuel : '+(m.quota||0).toLocaleString('fr-FR')+' FCFA/mois'; status.style.color='#6B7280'; }
+  }
+  // Mettre à jour le montant suggéré si un seul mois est sélectionné
+  const checked = document.querySelectorAll('.pay-month-btn.selected');
+  if(checked.length <= 1 && newQuota > 0){
+    const amtEl = document.getElementById('pay-amount');
+    if(amtEl) amtEl.value = newQuota * (checked.length||1);
+  }
+}
+
+function savePayQuota(){
+  const code = document.getElementById('pay-code')?.value;
+  const idx  = members.findIndex(x=>x.code===code);
+  if(idx<0){ _showDocToast('⚠️ Membre non trouvé'); return; }
+  const newQuota = parseInt(document.getElementById('pay-quota-edit')?.value||'0');
+  if(!newQuota || newQuota < 100){ _showDocToast('⚠️ Quota invalide (minimum 100 FCFA)'); return; }
+  const oldQuota = members[idx].quota;
+  const today = new Date().toISOString().split('T')[0];
+
+  // Conserver l'historique des changements de quota
+  if(!members[idx].quotaHistory) members[idx].quotaHistory = [];
+  // Ajouter le quota actuel dans l'historique s'il n'y est pas déjà
+  if(members[idx].quotaHistory.length === 0){
+    members[idx].quotaHistory.push({quota: oldQuota, date: members[idx].date||today});
+  }
+  // Ajouter le nouveau quota avec la date d'aujourd'hui
+  members[idx].quotaHistory.push({quota: newQuota, date: today});
+  members[idx].quota = newQuota;
+
+  dbPost('updateMember', members[idx]);
+
+  // Mettre à jour le montant affiché
+  const amtEl = document.getElementById('pay-amount');
+  const checked = document.querySelectorAll('.pay-month-btn.selected');
+  if(amtEl) amtEl.value = newQuota * Math.max(1, checked.length);
+
+  // Feedback
+  const btn = document.getElementById('pay-quota-save-btn');
+  const status = document.getElementById('pay-quota-status');
+  if(btn) btn.style.display='none';
+  if(status){
+    status.textContent='✅ Quota mis à jour : '+newQuota.toLocaleString('fr-FR')+' FCFA/mois (était : '+oldQuota.toLocaleString('fr-FR')+' FCFA depuis '+today+')';
+    status.style.color='#16A34A';
+  }
+  _showDocToast('✅ Quota de '+((members[idx].prenom?members[idx].prenom+' ':'')+members[idx].nom)+' mis à jour : '+newQuota.toLocaleString('fr-FR')+' FCFA/mois');
+  checkPayAmount();
+  invalidateCotisCache();
+  invalidateStatusCache();
 }
 
 function clearPayMembre(){
@@ -6890,6 +7138,7 @@ function confirmExcPay(){
   const code=document.getElementById('exc-pay-member-code').value;
   const amount=parseInt(document.getElementById('exc-pay-amount').value)||0;
   if(amount<100) return;
+  if(!validateCompte('exc-pay-compte','destinataire ')) return;
   if(!excCotisations[excIdx].paiements) excCotisations[excIdx].paiements={};
   excCotisations[excIdx].paiements[code]=amount;
   document.getElementById('exc-pay-ok').style.display='flex';
@@ -6975,6 +7224,7 @@ function confirmExcPay(){
   const amount = parseInt(document.getElementById('exc-pay-amount').value)||0;
   const mode   = document.getElementById('exc-pay-mode')?.value||'';
   if(amount<100) return;
+  if(!validateCompte('exc-pay-compte','destinataire ')) return;
   if(!excCotisations[excIdx].paiements) excCotisations[excIdx].paiements={};
   excCotisations[excIdx].paiements[code] = amount;
   const excPayRecord = {excId:excCotisations[excIdx].id, memberCode:code, montant:amount, mode, date:new Date().toISOString().split('T')[0]};
@@ -7169,6 +7419,7 @@ function saveAssist(){
   _cacheData();
 
   // ── Liaison Comptes & Trésorerie ──
+  if(!validateCompte('assist-compte','source ')) return;
   const astCpt = document.getElementById('assist-compte')?.value;
   if(astCpt && idx===-1){
     const mb = getMemberByCode(memberCode);
@@ -7475,13 +7726,29 @@ async function saveDoc(){
     closeModal('modal-doc');
     let sheetId=null;
     try{
-      const r=await dbPost('saveDocument',payload);
-      if(!r?.id){_showDocToast('⚠️ Erreur Sheets: '+(r?.error||'id manquant'));if(btn)btn.disabled=false;return;}
-      sheetId=r.id;
-      const di=documents.findIndex(d=>d.id===tmpId);
-      if(di>=0)documents[di].id=sheetId;
-      console.log('[Doc] ✅ Sheets id:',sheetId);
-    }catch(e){_showDocToast('⚠️ Erreur réseau');if(btn)btn.disabled=false;return;}
+      // dbGet (JSONP) pour avoir la vraie réponse avec l'id Sheets
+      const r = await dbGet('saveDocument', {
+        titre, categorie, date, description,
+        visibilite, statut,
+        fileName: fileName||'',
+        fileSize: fileSize||0,
+        dateAjout: payload.dateAjout
+      });
+      console.log('[Doc] saveDocument réponse:', r);
+      if(!r?.id){
+        _showDocToast('⚠️ Erreur Sheets: '+(r?.error||'id manquant'));
+        if(btn) btn.disabled=false;
+        return;
+      }
+      sheetId = r.id;
+      const di = documents.findIndex(d=>d.id===tmpId);
+      if(di>=0) documents[di].id = sheetId;
+      console.log('[Doc] ✅ Sheets id:', sheetId);
+    }catch(e){
+      _showDocToast('⚠️ Erreur réseau: '+e.message);
+      if(btn) btn.disabled=false;
+      return;
+    }
     if(hasNewFile) await _uploadFileChunks(sheetId,_currentDocFile);
     if(btn)btn.disabled=false;
   }else{
@@ -7500,73 +7767,153 @@ async function _uploadFileChunks(sheetId, file){
   const CHUNK  = 40000; // 40KB — pas de limite URL avec fetch POST
   const data   = file.dataUrl;
   const total  = Math.ceil(data.length / CHUNK);
-  const progEl = document.getElementById('doc-upload-progress');
+  const progEl = document.getElementById('doc-upload-float');
   const pctEl  = document.getElementById('doc-upload-pct');
   const barEl  = document.getElementById('doc-upload-bar');
   const stEl   = document.getElementById('doc-upload-status');
+  const fnEl   = document.getElementById('doc-float-filename');
+  const titEl  = document.getElementById('doc-float-title');
   if(progEl) progEl.style.display='block';
+  if(fnEl)   fnEl.textContent = file.name+' ('+fmtSize(file.size)+')';
+  if(titEl)  titEl.textContent = 'Envoi du document…';
 
-  function setP(pct,status){
-    if(pctEl) pctEl.textContent=pct+'%';
-    if(barEl) barEl.style.width=pct+'%';
-    if(stEl)  stEl.textContent=status;
+  // Mettre à jour une étape : 'active' | 'done' | 'error' | 'pending'
+  function setStep(id, state){
+    const row = document.getElementById('step-'+id);
+    const dot = document.getElementById('dot-'+id);
+    if(!row||!dot) return;
+    const colors = {active:'#1D4ED8', done:'#16A34A', error:'#DC2626', pending:'#9CA3AF'};
+    const bgs    = {active:'#DBEAFE', done:'#DCFCE7', error:'#FEE2E2', pending:'#E5E7EB'};
+    const icons  = {active:'⟳', done:'✓', error:'✗', pending: dot.textContent};
+    row.style.color  = colors[state];
+    dot.style.background = bgs[state];
+    dot.style.color  = colors[state];
+    if(state!=='pending') dot.textContent = icons[state];
   }
 
-  setP(5,'Préparation…');
-  console.log('[Doc] Upload '+total+' chunks de '+CHUNK+' chars pour id:'+sheetId);
-
-  // Envoyer les chunks via fetch POST (pas de limite URL)
-  for(let i=0;i<total;i++){
-    const chunk=data.substring(i*CHUNK,(i+1)*CHUNK);
-    setP(Math.round((i/total)*75),'Chunk '+(i+1)+'/'+total+'…');
-    // Utiliser GET JSONP pour confirmer la réception de chaque chunk
-    const chunkResult = await dbGet('uploadChunk', {
-      docId: sheetId,
-      chunk: encodeURIComponent(chunk),
-      idx: i,
-      total
-    });
-    if(chunkResult?.error){
-      console.warn('[Doc] Chunk '+i+' erreur:', chunkResult.error);
+  function setP(pct, status){
+    if(pctEl) pctEl.textContent = pct+'%';
+    if(barEl) barEl.style.width = pct+'%';
+    if(stEl)  stEl.textContent  = status;
+    // Couleur barre selon progression
+    if(barEl){
+      if(pct===100)      barEl.style.background='linear-gradient(90deg,#16A34A,#4ADE80)';
+      else if(pct >= 75) barEl.style.background='linear-gradient(90deg,#0F766E,#14B8A6)';
+      else               barEl.style.background='linear-gradient(90deg,#1D4ED8,#60A5FA)';
     }
-    await new Promise(res=>setTimeout(res,300));
   }
 
-  setP(80,'Assemblage sur Google Drive…');
+  setP(5,'Lecture du fichier…');
+  setStep('save','active');
+  setStep('upload','pending');
+  setStep('confirm','pending');
+  setStep('done','pending');
+  console.log('[Doc] Upload fichier:', file.name, file.size, 'octets, id:', sheetId);
 
-  // Finaliser via GET JSONP pour avoir une vraie réponse (dbPost = no-cors, réponse ignorée)
-  let finalizeResult = null;
+  // ── Envoyer le fichier complet en UN SEUL POST ──
+  setP(20,'Enregistrement dans Sheets…');
+  setStep('save','done');
+  setStep('upload','active');
+  setP(35,'Envoi vers Google Drive…');
+  let uploadOk = false;
   try{
-    finalizeResult = await dbGet('finalizeDocumentFile', {
-      docId: sheetId,
-      fileName: file.name,
-      fileType: file.type||'application/octet-stream',
-      totalChunks: total
+    const postBody = JSON.stringify({
+      action: 'uploadDocumentFull',
+      payload: {
+        id:       sheetId,       // ← id explicite
+        fileName: file.name,
+        fileType: file.type || 'application/octet-stream',
+        fileData: data
+      },
+      _token: GAS_SECRET
     });
-    console.log('[Doc] Finalize result:', finalizeResult);
+    console.log('[Doc] POST uploadDocumentFull id='+sheetId+' taille='+postBody.length+'chars');
+    const resp = await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {'Content-Type':'text/plain;charset=utf-8'},
+      body: postBody,
+      redirect: 'follow'
+    });
+    uploadOk = true;
+    console.log('[Doc] POST envoyé (no-cors)');
   }catch(e){
-    console.error('[Doc] Finalize error:', e);
+    console.error('[Doc] Erreur POST:', e);
   }
 
-  // Si on a directement le fileUrl dans la réponse → pas besoin de poller
-  if(finalizeResult?.fileUrl){
+  if(!uploadOk){
     if(progEl) progEl.style.display='none';
+    _showDocToast('❌ Erreur envoi. Vérifiez votre connexion.');
+    if(btn) btn.disabled=false;
+    return;
+  }
+
+  setStep('upload','done');
+  setStep('confirm','active');
+  setP(60,'Attente confirmation Drive…');
+
+  // ── Poller getDocumentUrl toutes les 5s jusqu'à 90s ──
+  let fileUrl = '';
+  for(let attempt=0; attempt<18; attempt++){
+    await new Promise(res=>setTimeout(res,5000));
+    setP(60+attempt*2, 'Vérification Drive… ('+( attempt+1)+'/18)');
+    try{
+      const r = await dbGet('getDocumentUrl',{docId:sheetId});
+      console.log('[Doc] Poll '+attempt+':', r);
+      if(r?.fileUrl && r.fileUrl.startsWith('http')){
+        fileUrl = r.fileUrl;
+        break;
+      }
+    }catch(e){ console.warn('[Doc] Poll erreur:', e); }
+  }
+
+  if(fileUrl){
+    setStep('confirm','done');
+    setStep('done','done');
+    setP(100,'✅ Document disponible !');
+    if(titEl) titEl.textContent='Upload terminé ✅';
+    if(barEl) barEl.style.background='linear-gradient(90deg,#16A34A,#4ADE80)';
+    // Mettre à jour localement + cache
     const di=documents.findIndex(d=>d.id===sheetId);
-    if(di>=0) documents[di].fileUrl=finalizeResult.fileUrl;
+    if(di>=0) documents[di].fileUrl=fileUrl;
     try{lsSet('mc_documents', JSON.stringify(documents));}catch(e){}
     renderDocsAdmin();
     const box=document.getElementById('doc-drive-link-box');
     const lnk=document.getElementById('doc-drive-link');
     if(box) box.style.display='block';
-    if(lnk){lnk.href=finalizeResult.fileUrl;lnk.textContent=finalizeResult.fileUrl;}
+    if(lnk){lnk.href=fileUrl;lnk.textContent=fileUrl;}
     _showDocToast('✅ Fichier disponible sur Google Drive !');
-    setP(100,'Terminé !');
-    if(btn) btn.disabled=false;
-    _currentDocFile=null;
-    return;
+  } else {
+    setStep('confirm','error');
+    setP(80,'⚠️ Drive non confirmé — rechargement…');
+    if(titEl) titEl.textContent='Vérification en cours…';
+    setTimeout(async()=>{
+      try{
+        const data2 = await dbGet('getDocuments');
+        if(data2?.documents){
+          documents=data2.documents;
+          try{lsSet('mc_documents',JSON.stringify(documents));}catch(e){}
+          renderDocsAdmin();
+          const d2=documents.find(d=>d.id===sheetId);
+          if(d2?.fileUrl){
+            setStep('confirm','done');
+            setStep('done','done');
+            setP(100,'✅ Document disponible !');
+            if(titEl) titEl.textContent='Upload terminé ✅';
+            const box=document.getElementById('doc-drive-link-box');
+            const lnk=document.getElementById('doc-drive-link');
+            if(box) box.style.display='block';
+            if(lnk){lnk.href=d2.fileUrl;lnk.textContent=d2.fileUrl;}
+            _showDocToast('✅ Document disponible !');
+          } else {
+            setStep('done','error');
+            if(stEl) stEl.textContent='⚠️ Vérifiez le déploiement GAS puis réessayez.';
+            _showDocToast('⚠️ Drive non disponible. Vérifiez le déploiement GAS.');
+          }
+        }
+      }catch(e){}
+    }, 3000);
   }
-
-  setP(85,'Attente confirmation Drive…');
 
   // Polling pour récupérer le fileUrl — 30 tentatives × 4s = 2 minutes max
   let found = false;
@@ -7944,30 +8291,382 @@ function setDocFilter(cat){
 }
 
 /* ══════════════════════════════════════════
-   TÉLÉPHONE — PRÉFIXE +225 AUTOMATIQUE
+   TÉLÉPHONE — SÉLECTEUR D'INDICATIF PAYS
 ══════════════════════════════════════════ */
+
+const TEL_COUNTRIES = [
+  // ── AFRIQUE DE L'OUEST (priorité) ──
+  {flag:'CI', name:'Côte d\'Ivoire',      code:'+225', iso:'CI'},
+  {flag:'SN', name:'Sénégal',              code:'+221', iso:'SN'},
+  {flag:'ML', name:'Mali',                 code:'+223', iso:'ML'},
+  {flag:'BF', name:'Burkina Faso',         code:'+226', iso:'BF'},
+  {flag:'GN', name:'Guinée',               code:'+224', iso:'GN'},
+  {flag:'GH', name:'Ghana',                code:'+233', iso:'GH'},
+  {flag:'NG', name:'Nigeria',              code:'+234', iso:'NG'},
+  {flag:'BJ', name:'Bénin',               code:'+229', iso:'BJ'},
+  {flag:'TG', name:'Togo',                 code:'+228', iso:'TG'},
+  {flag:'NE', name:'Niger',                code:'+227', iso:'NE'},
+  {flag:'MR', name:'Mauritanie',           code:'+222', iso:'MR'},
+  {flag:'GM', name:'Gambie',               code:'+220', iso:'GM'},
+  {flag:'SL', name:'Sierra Leone',         code:'+232', iso:'SL'},
+  {flag:'LR', name:'Liberia',              code:'+231', iso:'LR'},
+  {flag:'GW', name:'Guinée-Bissau',        code:'+245', iso:'GW'},
+  {flag:'CV', name:'Cap-Vert',             code:'+238', iso:'CV'},
+  // ── AFRIQUE CENTRALE ──
+  {flag:'CM', name:'Cameroun',             code:'+237', iso:'CM'},
+  {flag:'GA', name:'Gabon',                code:'+241', iso:'GA'},
+  {flag:'CG', name:'Congo',                code:'+242', iso:'CG'},
+  {flag:'CD', name:'RD Congo',             code:'+243', iso:'CD'},
+  {flag:'CF', name:'Centrafrique',         code:'+236', iso:'CF'},
+  {flag:'TD', name:'Tchad',                code:'+235', iso:'TD'},
+  {flag:'GQ', name:'Guinée équatoriale',   code:'+240', iso:'GQ'},
+  {flag:'ST', name:'São Tomé-et-Príncipe', code:'+239', iso:'ST'},
+  // ── AFRIQUE DE L'EST ──
+  {flag:'KE', name:'Kenya',                code:'+254', iso:'KE'},
+  {flag:'TZ', name:'Tanzanie',             code:'+255', iso:'TZ'},
+  {flag:'UG', name:'Ouganda',              code:'+256', iso:'UG'},
+  {flag:'RW', name:'Rwanda',               code:'+250', iso:'RW'},
+  {flag:'BI', name:'Burundi',              code:'+257', iso:'BI'},
+  {flag:'ET', name:'Éthiopie',             code:'+251', iso:'ET'},
+  {flag:'SO', name:'Somalie',              code:'+252', iso:'SO'},
+  {flag:'DJ', name:'Djibouti',             code:'+253', iso:'DJ'},
+  {flag:'ER', name:'Érythrée',             code:'+291', iso:'ER'},
+  {flag:'SS', name:'Soudan du Sud',        code:'+211', iso:'SS'},
+  {flag:'SD', name:'Soudan',               code:'+249', iso:'SD'},
+  // ── AFRIQUE AUSTRALE ──
+  {flag:'ZA', name:'Afrique du Sud',       code:'+27', iso:'ZA'},
+  {flag:'MZ', name:'Mozambique',           code:'+258', iso:'MZ'},
+  {flag:'ZM', name:'Zambie',               code:'+260', iso:'ZM'},
+  {flag:'ZW', name:'Zimbabwe',             code:'+263', iso:'ZW'},
+  {flag:'BW', name:'Botswana',             code:'+267', iso:'BW'},
+  {flag:'NA', name:'Namibie',              code:'+264', iso:'NA'},
+  {flag:'MW', name:'Malawi',               code:'+265', iso:'MW'},
+  {flag:'AO', name:'Angola',               code:'+244', iso:'AO'},
+  {flag:'LS', name:'Lesotho',              code:'+266', iso:'LS'},
+  {flag:'SZ', name:'Eswatini',             code:'+268', iso:'SZ'},
+  // ── AFRIQUE DU NORD ──
+  {flag:'DZ', name:'Algérie',              code:'+213', iso:'DZ'},
+  {flag:'MA', name:'Maroc',                code:'+212', iso:'MA'},
+  {flag:'TN', name:'Tunisie',              code:'+216', iso:'TN'},
+  {flag:'LY', name:'Libye',                code:'+218', iso:'LY'},
+  {flag:'EG', name:'Égypte',               code:'+20', iso:'EG'},
+  // ── ÎLES AFRICAINES ──
+  {flag:'MG', name:'Madagascar',           code:'+261', iso:'MG'},
+  {flag:'MU', name:'Maurice',              code:'+230', iso:'MU'},
+  {flag:'RE', name:'La Réunion',           code:'+262', iso:'RE'},
+  {flag:'SC', name:'Seychelles',           code:'+248', iso:'SC'},
+  {flag:'KM', name:'Comores',              code:'+269', iso:'KM'},
+  // ── EUROPE ──
+  {flag:'FR', name:'France',               code:'+33', iso:'FR'},
+  {flag:'BE', name:'Belgique',             code:'+32', iso:'BE'},
+  {flag:'CH', name:'Suisse',               code:'+41', iso:'CH'},
+  {flag:'LU', name:'Luxembourg',           code:'+352', iso:'LU'},
+  {flag:'DE', name:'Allemagne',            code:'+49', iso:'DE'},
+  {flag:'IT', name:'Italie',               code:'+39', iso:'IT'},
+  {flag:'ES', name:'Espagne',              code:'+34', iso:'ES'},
+  {flag:'PT', name:'Portugal',             code:'+351', iso:'PT'},
+  {flag:'GB', name:'Royaume-Uni',          code:'+44', iso:'GB'},
+  {flag:'NL', name:'Pays-Bas',             code:'+31', iso:'NL'},
+  {flag:'SE', name:'Suède',                code:'+46', iso:'SE'},
+  {flag:'NO', name:'Norvège',              code:'+47', iso:'NO'},
+  // ── AMÉRIQUES ──
+  {flag:'US', name:'États-Unis',           code:'+1', iso:'US'},
+  {flag:'US', name:'Canada',               code:'+1', iso:'US'},
+  {flag:'BR', name:'Brésil',               code:'+55', iso:'BR'},
+  {flag:'MX', name:'Mexique',              code:'+52', iso:'MX'},
+  // ── MOYEN-ORIENT ──
+  {flag:'SA', name:'Arabie Saoudite',      code:'+966', iso:'SA'},
+  {flag:'AE', name:'Émirats Arabes Unis',  code:'+971', iso:'AE'},
+  {flag:'QA', name:'Qatar',                code:'+974', iso:'QA'},
+  {flag:'TR', name:'Turquie',              code:'+90', iso:'TR'},
+  // ── ASIE / OCÉANIE ──
+  {flag:'CN', name:'Chine',                code:'+86', iso:'CN'},
+  {flag:'IN', name:'Inde',                 code:'+91', iso:'IN'},
+  {flag:'JP', name:'Japon',                code:'+81', iso:'JP'},
+  {flag:'KR', name:'Corée du Sud',         code:'+82', iso:'KR'},
+  {flag:'AU', name:'Australie',            code:'+61', iso:'AU'},
+];
+
+let _telSelectedCode = '+225';
+let _telDropdownOpen = false;
+const _TEL_DEFAULT_CODE = '+225';
+const _TEL_DEFAULT_FLAG = 'CI •'; // Pas d'emoji pour éviter les erreurs d'encodage
+
+document.addEventListener('DOMContentLoaded', function(){
+  const flagEl = document.getElementById('tel-flag-display');
+  const codeEl = document.getElementById('tel-code-display');
+  if(flagEl){ flagEl.textContent = 'CI'; flagEl.style.cssText='font-size:11px;font-weight:700;color:var(--navy);background:#E0F2FE;padding:2px 5px;border-radius:4px'; }
+  if(codeEl) codeEl.textContent = '+225';
+  _telSelectedCode = '+225';
+  initTelDropdown();
+});
+
+function initTelDropdown(){
+  const brandSel = document.getElementById('brand-tel-indicatif');
+  // Peupler le select Personnalisation si vide
+  if(brandSel && brandSel.options.length <= 1){
+    TEL_COUNTRIES.forEach(c=>{
+      const opt = document.createElement('option');
+      opt.value = c.code+'|'+c.flag;
+      opt.textContent = c.flag+' '+c.name+' ('+c.code+')';
+      brandSel.appendChild(opt);
+    });
+    const optCustom = document.createElement('option');
+    optCustom.value = 'custom';
+    optCustom.textContent = '✏️ Autre — saisir manuellement';
+    brandSel.appendChild(optCustom);
+  }
+  renderTelCountries(TEL_COUNTRIES, '');
+  // Restaurer la valeur sauvegardée (branding > localStorage > CI par défaut)
+  const savedRaw = branding.telIndicatifDefaut || lsGet('_tel_indicatif_defaut') || (_TEL_DEFAULT_CODE+'|'+_TEL_DEFAULT_FLAG);
+  _applyTelBrandSel(savedRaw);
+  applyDefaultTelIndicatif();
+  // Fermer dropdown si clic ailleurs
+  document.addEventListener('click', function(e){
+    if(!e.target.closest('#tel-flag-btn') && !e.target.closest('#tel-dropdown')){
+      closeTelDropdown();
+    }
+  });
+}
+
+// Applique une valeur "code|flag" dans le select Personnalisation + aperçu
+function _applyTelBrandSel(raw){
+  const brandSel = document.getElementById('brand-tel-indicatif');
+  if(!brandSel) return;
+  // Chercher par code (+225) indépendamment du flag/emoji
+  const code = (raw||'').split('|')[0] || '+225';
+  let found = false;
+  for(const opt of brandSel.options){
+    if(opt.value.startsWith(code+'|')){ brandSel.value = opt.value; found = true; break; }
+  }
+  if(!found){
+    for(const opt of brandSel.options){
+      if(opt.value.startsWith('+225|')){ brandSel.value = opt.value; found = true; break; }
+    }
+  }
+  const parts = (brandSel.value||'+225|CI').split('|');
+  const isoClean = (parts[1]||'CI').replace(/[^\x00-\x7F]/g,'').substring(0,3)||'CI';
+  const fp = document.getElementById('brand-tel-flag-preview');
+  const cp = document.getElementById('brand-tel-code-preview');
+  if(fp){ fp.textContent = isoClean; fp.style.cssText='font-size:12px;font-weight:700;color:var(--navy)'; }
+  if(cp) cp.textContent = parts[0]||'+225';
+}
+
+function onBrandIndicatifChange(){
+  const sel = document.getElementById('brand-tel-indicatif');
+  if(!sel) return;
+  const val = sel.value;
+  if(val === 'custom'){
+    const custom = prompt("Saisissez l\'indicatif (ex: +33, +49) :");
+    if(custom){
+      const code = custom.startsWith('+')?custom:('+'+custom.replace(/\D/g,''));
+      const raw  = code+'|'+code.replace('+','').substring(0,3);
+      branding.telIndicatifDefaut = raw;
+      lsSet('_tel_indicatif_defaut', raw);
+      const fp = document.getElementById('brand-tel-flag-preview');
+      const cp = document.getElementById('brand-tel-code-preview');
+      if(fp){ fp.textContent = code.replace('+','').substring(0,3); fp.style.cssText='font-size:12px;font-weight:700;color:var(--navy)'; }
+      if(cp) cp.textContent = code;
+    }
+    return;
+  }
+  if(!val) return;
+  const parts = val.split('|');
+  const code  = parts[0]||'+225';
+  const isoClean = (parts[1]||'CI').replace(/[^\x00-\x7F]/g,'').substring(0,3)||'CI';
+  // Stocker sans emoji (code|ISO)
+  const cleanRaw = code+'|'+isoClean;
+  branding.telIndicatifDefaut = cleanRaw;
+  lsSet('_tel_indicatif_defaut', cleanRaw);
+  const fp = document.getElementById('brand-tel-flag-preview');
+  const cp = document.getElementById('brand-tel-code-preview');
+  if(fp){ fp.textContent = isoClean; fp.style.cssText='font-size:12px;font-weight:700;color:var(--navy)'; }
+  if(cp) cp.textContent = code;
+}
+
+function applyDefaultTelIndicatif(){
+  const raw   = branding.telIndicatifDefaut || lsGet('_tel_indicatif_defaut') || ('+225|CI');
+  const parts = raw.split('|');
+  const code  = parts[0]||'+225';
+  // Trouver iso depuis TEL_COUNTRIES
+  const country = TEL_COUNTRIES.find(c=>c.code===code);
+  const iso = country ? country.iso : (parts[1]||'??').replace(/[^A-Z]/g,'').substring(0,2)||'CI';
+  _telSelectedCode = code;
+  const flagEl = document.getElementById('tel-flag-display');
+  const codeEl = document.getElementById('tel-code-display');
+  if(flagEl){
+    flagEl.textContent = iso;
+    flagEl.style.cssText='font-size:11px;font-weight:700;color:var(--navy);background:#E0F2FE;padding:2px 5px;border-radius:4px';
+  }
+  if(codeEl) codeEl.textContent = code;
+}
+
+
+
+function renderTelCountries(list, q){
+  const el = document.getElementById('tel-country-list');
+  if(!el) return;
+  let html = list.map(c=>`
+    <div onclick="selectTelCountry('${c.code}','${c.flag}')"
+      style="display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #F3F4F6"
+      onmouseover="this.style.background='#F5F3FF'" onmouseout="this.style.background=''">
+      <span style="font-size:18px">${c.flag}</span>
+      <span style="flex:1;color:var(--navy)">${c.name}</span>
+      <span style="font-family:var(--mono);color:#7C3AED;font-weight:600">${c.code}</span>
+    </div>`).join('');
+  // Option saisie manuelle si recherche ressemble à un code
+  const isCodeSearch = q && /^\+?\d+$/.test(q.trim());
+  const customCode   = isCodeSearch ? (q.startsWith('+')?q:('+'+q.replace(/\D/g,''))) : '';
+  if(isCodeSearch && customCode.length >= 2){
+    html += `<div onclick="selectTelCountry('${customCode}','🌍')"
+      style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:13px;background:#F5F3FF;border-top:2px solid #DDD6FE"
+      onmouseover="this.style.background='#EDE9FE'" onmouseout="this.style.background='#F5F3FF'">
+      <span style="font-size:18px">🌍</span>
+      <span style="flex:1;color:#5B21B6;font-weight:600">Utiliser <strong>${customCode}</strong></span>
+      <span style="font-size:11px;color:#7C3AED">✎ Personnalisé</span>
+    </div>`;
+  }
+  // Toujours afficher l'option saisie manuelle en bas
+  html += `<div onclick="openCustomCodeInput()"
+    style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;font-size:12px;background:#F9FAFB;border-top:1px solid #E5E7EB;color:#6B7280"
+    onmouseover="this.style.background='#F5F3FF'" onmouseout="this.style.background='#F9FAFB'">
+    <span style="font-size:15px">✏️</span>
+    <span>Autre — Saisir un indicatif manuellement</span>
+  </div>`;
+  el.innerHTML = html;
+}
+
+function filterTelCountries(){
+  const q = (document.getElementById('tel-country-search')?.value||'').trim();
+  const filtered = q ? TEL_COUNTRIES.filter(c=>
+    c.name.toLowerCase().includes(q.toLowerCase()) || c.code.includes(q)
+  ) : TEL_COUNTRIES;
+  renderTelCountries(filtered, q);
+}
+
+function openCustomCodeInput(){
+  const el = document.getElementById('tel-country-list');
+  if(!el) return;
+  el.innerHTML = `<div style="padding:12px 14px">
+    <div style="font-size:12px;color:#6B7280;margin-bottom:8px">Saisissez votre indicatif (ex: +1, +49, +971…)</div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <input type="text" id="tel-custom-input" placeholder="+XXX" maxlength="6"
+        oninput="previewCustomCode()"
+        onkeydown="if(event.key===\'Enter\') confirmCustomCode()"
+        style="flex:1;padding:8px 10px;border:1.5px solid #7C3AED;border-radius:6px;font-size:15px;font-weight:700;font-family:var(--mono);color:#5B21B6"/>
+      <button onclick="confirmCustomCode()"
+        style="padding:8px 14px;background:#7C3AED;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">✓ OK</button>
+    </div>
+    <div id="tel-custom-preview" style="font-size:11px;color:#7C3AED;margin-top:6px"></div>
+    <button onclick="filterTelCountries()"
+      style="margin-top:8px;font-size:11px;color:#6B7280;background:none;border:none;cursor:pointer;text-decoration:underline">← Retour à la liste</button>
+  </div>`;
+  setTimeout(()=>document.getElementById('tel-custom-input')?.focus(), 50);
+}
+
+function previewCustomCode(){
+  const val = (document.getElementById('tel-custom-input')?.value||'').trim();
+  const preview = document.getElementById('tel-custom-preview');
+  if(!preview) return;
+  const code = val.startsWith('+') ? val : (val ? '+'+val.replace(/\D/g,'') : '');
+  const numEx = (document.getElementById('m-tel')?.value||'').replace(/\D/g,'')||'XXXXXXXXX';
+  preview.textContent = code.length>=2 ? '📱 Aperçu : '+code+' '+numEx : '';
+}
+
+function confirmCustomCode(){
+  const val = (document.getElementById('tel-custom-input')?.value||'').trim();
+  if(!val) return;
+  const code = val.startsWith('+') ? val : '+'+val.replace(/\D/g,'');
+  if(code.length < 2) return;
+  selectTelCountry(code, '🌍');
+}
+
+
+function toggleTelDropdown(){
+  _telDropdownOpen ? closeTelDropdown() : openTelDropdown();
+}
+
+function openTelDropdown(){
+  const dd = document.getElementById('tel-dropdown');
+  if(dd){ dd.style.display='block'; _telDropdownOpen=true; }
+  const si = document.getElementById('tel-country-search');
+  if(si){ si.value=''; si.focus(); filterTelCountries(); }
+}
+
+function closeTelDropdown(){
+  const dd = document.getElementById('tel-dropdown');
+  if(dd){ dd.style.display='none'; _telDropdownOpen=false; }
+}
+
+function selectTelCountry(code, flag){
+  _telSelectedCode = code;
+  const flagEl = document.getElementById('tel-flag-display');
+  const codeEl = document.getElementById('tel-code-display');
+  // Trouver le nom ISO 2 lettres depuis TEL_COUNTRIES
+  const country = TEL_COUNTRIES.find(c=>c.code===code);
+  const isoLabel = country ? country.iso : (flag||'').replace(/[^A-Z]/g,'').substring(0,2) || '??';
+  if(flagEl){
+    flagEl.textContent = isoLabel;
+    flagEl.style.cssText='font-size:11px;font-weight:700;color:var(--navy);background:#E0F2FE;padding:2px 5px;border-radius:4px';
+  }
+  if(codeEl) codeEl.textContent = code;
+  closeTelDropdown();
+  onTelInput();
+  document.getElementById('m-tel')?.focus();
+}
+
+function onTelInput(){
+  const input = document.getElementById('m-tel');
+  const preview = document.getElementById('tel-preview');
+  if(!input || !preview) return;
+  const digits = input.value.replace(/\D/g,'');
+  if(digits.length > 0){
+    preview.textContent = '📱 Numéro complet : ' + _telSelectedCode + ' ' + digits;
+  } else {
+    preview.textContent = '';
+  }
+}
+
+function getTelFull(){
+  const input = document.getElementById('m-tel');
+  if(!input || !input.value.trim()) return '';
+  const digits = input.value.replace(/\D/g,'');
+  if(!digits) return '';
+  return _telSelectedCode + digits;
+}
+
+function setTelValue(fullTel){
+  // Remplir le champ depuis un numéro complet existant (ex: +2250712345678)
+  if(!fullTel){ return; }
+  // Trouver l'indicatif correspondant
+  const match = TEL_COUNTRIES.find(c=> fullTel.startsWith(c.code));
+  if(match){
+    _telSelectedCode = match.code;
+    const flagEl = document.getElementById('tel-flag-display');
+    const codeEl = document.getElementById('tel-code-display');
+    if(flagEl) flagEl.textContent = match.flag;
+    if(codeEl) codeEl.textContent = match.code;
+    const num = fullTel.substring(match.code.length);
+    const input = document.getElementById('m-tel');
+    if(input) input.value = num;
+  } else {
+    const input = document.getElementById('m-tel');
+    if(input) input.value = fullTel;
+  }
+  onTelInput();
+}
+
 function formatTel(raw){
   if(!raw) return '';
-  // Remove all non-digits
-  let digits = raw.replace(/\D/g,'');
-  // If starts with 225, keep as is; if starts with 0, prepend 225
-  if(digits.startsWith('225')) {
-    // already has country code — ensure leading +
-    return '+' + digits;
-  }
-  if(digits.length === 0) return '';
-  // Prepend Ivory Coast code
-  return '+225' + digits;
+  // Si déjà un numéro complet avec indicatif → retourner tel quel
+  if(raw.startsWith('+')) return raw;
+  const digits = raw.replace(/\D/g,'');
+  if(!digits) return '';
+  return _telSelectedCode + digits;
 }
 
 function formatTelInput(el){
-  const raw = el.value;
-  if(!raw.trim()) return;
-  // Only format when there's something meaningful
-  const digits = raw.replace(/\D/g,'');
-  if(digits.length >= 8){
-    el.value = formatTel(raw);
-  }
+  // Legacy — ne rien faire, géré par onTelInput
 }
 
 /* ══════════════════════════════════════════
@@ -8572,6 +9271,7 @@ function savePret(){
   errEl.style.display='none';
   if(!memberCode){showErr('Sélectionnez un membre bénéficiaire.');return;}
   if(!montant||montant<=0){showErr('Le montant doit être supérieur à 0.');return;}
+  if(!validateCompte('pret-compte','source (à débiter) ')) return;
   if(taux<0||taux>100){showErr('Le taux doit être compris entre 0% et 100%.');return;}
   if(!duree||duree<1){showErr('La durée doit être d\'au moins 1 échéance.');return;}
   if(!date){showErr('La date de déblocage est obligatoire.');return;}
@@ -8591,7 +9291,8 @@ function savePret(){
   if(idx>=0) prets[idx]=record; else prets.push(record);
   dbPost('savePret',record);
   // Transaction compte — sortie si nouveau prêt (pas modification)
-  const pretCpt = document.getElementById('pret-compte')?.value;
+  const pretCptEl = document.getElementById('pret-compte');
+  const pretCpt   = pretCptEl?.value || pretCptEl?.selectedOptions?.[0]?.value || '';
   if(pretCpt && !_pretEditId){
     enregistrerTransaction({compteId:pretCpt, type:'sortie', montant:record.montant,
       libelle:'Prêt octroyé — '+(record.memberNom||record.memberCode)+' — '+(record.objet||''),
@@ -8654,6 +9355,7 @@ function saveRemboursement(){
   errEl.style.display='none';
   if(!montant||montant<=0){errEl.textContent='Montant invalide.';errEl.style.display='block';return;}
   if(!date){errEl.textContent='Date obligatoire.';errEl.style.display='block';return;}
+  if(!validateCompte('rembours-compte','destinataire ')) return;
   const pret=prets.find(x=>x.id===pretId);if(!pret)return;
   const rows=getAmortissement(pret);
   const row=rows.find(r=>r.n===numEch);
@@ -9278,10 +9980,18 @@ function genererBilanAG(){
     return 0;
   }
 
-  // Filtrer selon le mode de période
+  // Filtrer selon le mode de période — utiliser p.date en fallback si p.annee absent
   const paymentsPeriode = dateDebutStr && dateFinStr
     ? payments.filter(p=>{ const d=p.date||`${p.annee||annee}-${String(moisToNum(p.mois)||1).padStart(2,'0')}-01`; return d>=dateDebutStr&&d<=dateFinStr; })
-    : payments.filter(p=>String(p.annee||'')===String(annee)&&moisToNum(p.mois)>=moisDebut&&moisToNum(p.mois)<=moisFin);
+    : payments.filter(p=>{
+        const pAnnee = String(p.annee||'');
+        const pDate  = p.date||'';
+        // Extraire l'année depuis la date si annee absent
+        const effectiveAnnee = pAnnee || (pDate ? pDate.substring(0,4) : '');
+        if(effectiveAnnee !== String(annee)) return false;
+        const mn = moisToNum(p.mois) || (pDate ? new Date(pDate).getMonth()+1 : 0);
+        return mn >= moisDebut && mn <= moisFin;
+      });
 
   for(let m=moisDebut; m<=moisFin; m++){
     const montantMois = paymentsPeriode.filter(p=>moisToNum(p.mois)===m).reduce((s,p)=>s+Number(p.montant||0),0);
@@ -9325,35 +10035,56 @@ function genererBilanAG(){
   // ─────────────────────────────────────
   // 3b. DROITS D'ADHÉSION
   // ─────────────────────────────────────
-  // Les droits d'adhésion sont liés aux membres selon leur date d'adhésion
-  // Droits d'adhésion — tous les membres ayant payé (recette unique, pas filtrée par période)
-  const membresAvecDroit = members.filter(m=>{
-    if(!m.droitPaye || !Number(m.droitMontant)) return false;
-    // Filtrer par date d'adhésion si la période est renseignée
-    if(dateDebutStr && dateFinStr){
-      const dateAdh = m.date||'';
-      return dateAdh>=dateDebutStr && dateAdh<=dateFinStr;
-    }
-    // Sans filtre dates : filtrer par année d'adhésion
-    // Si aucune date → inclure quand même
-    if(!m.date) return true;
-    const anneeAdh = m.date.substring(0,4);
-    return String(anneeAdh)===String(annee);
-  });
-  // Si aucun résultat avec filtre année → prendre tous (données sans date)
-  const membresAvecDroitFinal = membresAvecDroit.length > 0
-    ? membresAvecDroit
-    : members.filter(m=>m.droitPaye && Number(m.droitMontant));
+  const montantDroitRef = Number(branding.droitAdhesion)||0;
 
-  const totalDroits = membresAvecDroitFinal.reduce((s,m)=>s+Number(m.droitMontant||0),0);
+  // Normaliser une date membre (format ISO "2026-01-01" ou FR "01/01/2026" ou "01/12/2025")
+  const parseDateMembre = (dateStr) => {
+    if(!dateStr) return null;
+    // Format ISO : YYYY-MM-DD
+    if(/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return new Date(dateStr);
+    // Format FR : DD/MM/YYYY
+    if(/^\d{2}\/\d{2}\/\d{4}/.test(dateStr)){
+      const [d,m,y] = dateStr.split('/');
+      return new Date(y+'-'+m+'-'+d);
+    }
+    return new Date(dateStr);
+  };
+  const getAnneeAdh = (m) => {
+    const d = parseDateMembre(m.date);
+    return d && !isNaN(d) ? String(d.getFullYear()) : '';
+  };
+
+  const membresAvecDroit = members.filter(m=>{
+    const dp = m.droitPaye===true||m.droitPaye==='true'||m.droitPaye==='1'||m.droitPaye===1;
+    if(!dp) return false;
+    if(dateDebutStr && dateFinStr){
+      const d = parseDateMembre(m.date);
+      if(!d || isNaN(d)) return false;
+      const iso = d.toISOString().split('T')[0];
+      return iso>=dateDebutStr && iso<=dateFinStr;
+    }
+    const anneeAdh = getAnneeAdh(m);
+    if(!anneeAdh) return false; // Exclure si pas de date (on ne sait pas l'année)
+    return anneeAdh === String(annee);
+  });
+
+  // PAS de fallback sur tous les membres — si aucun dans l'année, afficher vide
+  const membresAvecDroitFinal = membresAvecDroit;
+
+  // Montant : utiliser droitMontant stocké, sinon branding.droitAdhesion
+  const getDroitMontant = m => {
+    const stored = Number(m.droitMontant||0);
+    return stored > 0 ? stored : montantDroitRef;
+  };
+  const totalDroits = membresAvecDroitFinal.reduce((s,m)=>s+getDroitMontant(m),0);
   bagTableSection('bag-section-adhesion','DROITS D\'ADHÉSION','#1E40AF',
     ['N°','NOM ET PRÉNOM','CODE','DATE D\'ADHÉSION','MONTANT DROIT (FCFA)'],
     membresAvecDroitFinal.map(m=>[
       m.num||'—',
       ((m.prenom?m.prenom+' ':'')+m.nom).trim()||'—',
       m.code||'—',
-      m.date?new Date(m.date).toLocaleDateString('fr-FR'):'—',
-      `<span style="font-family:var(--mono)">${fmt(Number(m.droitMontant||0))}</span>`
+      (()=>{ const d=parseDateMembre(m.date); return d&&!isNaN(d)?d.toLocaleDateString('fr-FR'):'—'; })(),
+      `<span style="font-family:var(--mono);font-weight:600">${fmt(getDroitMontant(m))}</span>`
     ]),
     totalDroits);
 
@@ -9423,11 +10154,19 @@ function genererBilanAG(){
   // Solde Comptes & Trésorerie — pour la vérification de cohérence uniquement (hors recettes)
   const _soldeTresorerie = comptes.filter(cp=>cp.actif).reduce((s,cp)=>s+getCompteSolde(cp.id),0);
 
+  // Recharger le montant droit depuis le DOM si branding pas encore chargé
+  const droitAdhesionRef = Number(branding.droitAdhesion) ||
+    Number(document.getElementById('brand-droit-adhesion')?.value) || 0;
+  const _getDroitFinal = m => {
+    const s = Number(m.droitMontant||0);
+    return s > 0 ? s : droitAdhesionRef;
+  };
+
   const recettes = {
     soldePrecedent: _soldePrecedentAG,
     cotisations:    totalCotis,
     cotisationsExc: totalExc,
-    droitsAdhesion: membresAvecDroitFinal.reduce((s,m)=>s+Number(m.droitMontant||0),0),
+    droitsAdhesion: membresAvecDroitFinal.reduce((s,m)=>s+_getDroitFinal(m),0),
     dons:           totalDons,
   };
   const totalRecettes = Object.values(recettes).reduce((s,v)=>s+v,0);
@@ -10311,11 +11050,38 @@ function renderComptes(){
 }
 
 // ── Mettre à jour les selects dans les autres modals ──
+// ── Validation compte obligatoire ─────────────────────────────
+// Retourne true si valide, false + affiche erreur si vide
+function validateCompte(selectId, labelModule){
+  const sel = document.getElementById(selectId);
+  if(!sel) return true;
+  // Valide si : valeur non vide ET selectedIndex > 0 (pas la 1ère option vide)
+  const hasValue = sel.value && sel.value !== '' && sel.selectedIndex > 0;
+  if(!hasValue){
+    sel.style.borderColor = '#DC2626';
+    sel.style.boxShadow   = '0 0 0 2px rgba(220,38,38,0.2)';
+    _showDocToast('⚠️ Compte '+(labelModule||'')+'obligatoire — sélectionnez un compte avant d\'enregistrer');
+    setTimeout(()=>{ sel.style.borderColor=''; sel.style.boxShadow=''; }, 3000);
+    sel.focus();
+    return false;
+  }
+  sel.style.borderColor = '';
+  sel.style.boxShadow   = '';
+  return true;
+}
+
 function updateComptesSelects(){
+  const actifs = comptes.filter(c=>c.actif && c.id);
   const selects = document.querySelectorAll('.select-compte');
-  const opts = '<option value="">— Sélectionner un compte —</option>'
-    + comptes.filter(c=>c.actif).map(c=>`<option value="${c.id}">${c.nom} (${COMPTE_TYPE_LABELS[c.type]||c.type})</option>`).join('');
-  selects.forEach(s=>{ s.innerHTML = opts; });
+  selects.forEach(s=>{
+    const prevVal = s.value; // mémoriser la sélection actuelle
+    s.innerHTML = '<option value="">— Sélectionner un compte —</option>'
+      + actifs.map(c=>`<option value="${c.id}">${c.nom} (${COMPTE_TYPE_LABELS[c.type]||c.type})</option>`).join('');
+    // Restaurer la sélection si elle est toujours valide
+    if(prevVal && actifs.find(c=>c.id===prevVal)){
+      s.value = prevVal;
+    }
+  });
   // Filtre historique
   const filtreEl = document.getElementById('comptes-filtre-compte');
   if(filtreEl){
@@ -11147,7 +11913,7 @@ function saveConfigModules(){
     if(el) modulesConfig['member_'+m.id] = el.checked;
   });
   lsSet('mc_modules_config', JSON.stringify(modulesConfig));
-  dbPost('saveModulesConfig',{modulesConfig});
+  dbPost('saveModulesConfig', {modulesConfig, source: 'client'});
   // Appliquer et reconstruire
   applyModulesConfig();
   buildSidebar(currentRole||'admin');
@@ -12200,6 +12966,7 @@ function saveDep(){
   _cacheData();
 
   // ── Liaison Comptes & Trésorerie ──
+  if(!validateCompte('dep-compte','source ')) return;
   const depCpt = document.getElementById('dep-compte')?.value;
   if(depCpt && idx===-1){
     enregistrerTransaction({
@@ -12236,17 +13003,36 @@ function renderDepenses(){
   const search   = (document.getElementById('dep-search')?.value||'').toLowerCase();
   const moisFil  = document.getElementById('dep-month-filter')?.value||'';
 
-  const totalMont     = depenses.reduce((s,d)=>s+d.montant,0);
-  const totalAct      = depenses.filter(d=>d.type==='activite').reduce((s,d)=>s+d.montant,0);
-  const totalFonct    = depenses.filter(d=>d.type==='fonctionnement').reduce((s,d)=>s+d.montant,0);
-  const totalAutres   = depenses.filter(d=>d.type==='autres').reduce((s,d)=>s+d.montant,0);
-  const totalCotis    = members.filter(m=>m.actif).reduce((s,m)=>s+getTotalPaid(m),0);
-  const totalCotisExc = excCotisations.reduce((s,exc)=>s+Object.values(exc.paiements||{}).reduce((a,v)=>a+v,0),0);
-  const totalDroits   = members.filter(m=>m.droitPaye).reduce((s,m)=>s+(m.droitMontant||0),0);
-  const totalDonsEsp  = dons.filter(d=>d.type==='especes').reduce((s,d)=>s+(Number(d.montant)||0),0);
-  const totalAssistD  = assistances.reduce((s,a)=>s+(Number(a.montant)||0),0);
-  const _soldePrecedent = calculerSoldeAnnee(String(parseInt(_anneeActive||'2026')-1)) > 0
-    ? calculerSoldeAnnee(String(parseInt(_anneeActive||'2026')-1)) : (Number(branding.soldePrecedent)||0);
+  const totalMont     = depenses.reduce((s,d)=>s+Number(d.montant||0),0);
+  const totalAct      = depenses.filter(d=>d.type==='activite').reduce((s,d)=>s+Number(d.montant||0),0);
+  const totalFonct    = depenses.filter(d=>d.type==='fonctionnement').reduce((s,d)=>s+Number(d.montant||0),0);
+  const totalAutres   = depenses.filter(d=>d.type==='autres').reduce((s,d)=>s+Number(d.montant||0),0);
+  // Filtrer par année active
+  const yr = String(_anneeActive||new Date().getFullYear());
+  const totalCotis    = members.filter(m=>m.actif).reduce((s,m)=>s+getTotalPaid(m,yr),0);
+  const totalCotisExc = excCotisations
+    .filter(exc=>{ const d=exc.dateCreation?new Date(exc.dateCreation):null; return d&&String(d.getFullYear())===yr; })
+    .reduce((s,exc)=>s+Object.values(exc.paiements||{}).reduce((a,v)=>a+Number(v||0),0),0);
+  const droitRef      = Number(branding.droitAdhesion)||0;
+  const totalDroits   = members.filter(m=>{
+    const dp=m.droitPaye===true||m.droitPaye==='true'||m.droitPaye==='1';
+    if(!dp) return false;
+    const d=m.date?new Date(m.date):null;
+    return d&&String(d.getFullYear())===yr;
+  }).reduce((s,m)=>{ const dm=Number(m.droitMontant||0); return s+(dm>0?dm:droitRef); },0);
+  const totalDonsEsp  = dons.filter(d=>{
+    if(d.type!=='especes') return false;
+    const a=d.annee||(d.date?d.date.substring(0,4):'');
+    return a===yr;
+  }).reduce((s,d)=>s+(Number(d.montant)||0),0);
+  const totalAssistD  = assistances.filter(a=>{
+    const raw=a.dateVerse||a.dateEvent||a.date||'';
+    if(!raw) return false;
+    const d=new Date(raw);
+    return !isNaN(d)&&String(d.getFullYear())===yr;
+  }).reduce((s,a)=>s+(Number(a.montant)||0),0);
+  const _soldePrecedent = calculerSoldeAnnee(String(parseInt(yr)-1))>0
+    ? calculerSoldeAnnee(String(parseInt(yr)-1)) : (Number(branding.soldePrecedent)||0);
   const solde = totalCotis + totalCotisExc + totalDroits + totalDonsEsp - totalMont - totalAssistD + _soldePrecedent;
 
   statsEl.innerHTML=`
@@ -12455,64 +13241,108 @@ function renderRapport(){
   // Mois de l'année
   const moisAnnee = getMonthsForYear(annee);
 
-  // Calculs globaux
+  // Calculs globaux (toute l'année)
   const totalCotisNorm = moisAnnee.reduce((s,mn)=>
     s + actifs.reduce((a,m)=>{ const p=getMoisPaidList(m,annee); return a+(p.includes(mn)?m.quota:0); },0), 0);
-  // Cotisations exceptionnelles filtrées par année (via dateCreation)
+
+  // Cotisations exceptionnelles filtrées par année
   const excDeAnnee = excCotisations.filter(exc=>{
     if(!exc.dateCreation) return false;
     const yr = new Date(exc.dateCreation).getFullYear();
     return !isNaN(yr) && String(yr) === annee;
   });
   const totalCotisExc = excDeAnnee.reduce((s,exc)=>
-    s + Object.values(exc.paiements||{}).reduce((a,v)=>a+v,0), 0);
-  const totalDepGlobal = depenses.filter(d=>(d.annee||'2026')===annee).reduce((s,d)=>s+d.montant,0);
+    s + Object.values(exc.paiements||{}).reduce((a,v)=>a+Number(v),0), 0);
 
-  // Dons en espèces sur toute l'année (ajoutés aux recettes)
-  const donsEspGlobal = dons.filter(d=>d.type==='especes'&&(d.annee||'2026')===annee)
-    .reduce((s,d)=>s+(Number(d.montant)||0),0);
+  // Dépenses toute l'année — utiliser la date réelle si annee absent
+  const totalDepGlobal = depenses.filter(d=>{
+    const a = d.annee || (d.date?String(new Date(d.date).getFullYear()):'');
+    return a === annee;
+  }).reduce((s,d)=>s+Number(d.montant||0),0);
 
-  // Assistances sur toute l'année
+  // Dons en espèces toute l'année
+  const donsEspGlobal = dons.filter(d=>{
+    if(d.type!=='especes') return false;
+    const a = d.annee || (d.date?String(new Date(d.date).getFullYear()):'');
+    return a === annee;
+  }).reduce((s,d)=>s+(Number(d.montant)||0),0);
+
+  // Assistances toute l'année
   const assistGlobal = assistances.filter(a=>{
-    const raw = a.dateVerse || a.dateEvent || '';
+    const raw = a.dateVerse || a.dateEvent || a.date || '';
     if(!raw) return false;
     const d = new Date(raw);
     return !isNaN(d) && String(d.getFullYear())===annee;
   }).reduce((s,a)=>s+(Number(a.montant)||0), 0);
 
-  // Droits d'adhésion (recette unique — comptés une seule fois, pas par année)
-  const totalDroitsAdh = members.filter(m=>m.droitPaye).reduce((s,m)=>s+(m.droitMontant||0),0);
+  // Droits d'adhésion — filtrés par année d'adhésion
+  const _droitRef = Number(branding.droitAdhesion)||0;
+  const _getDroit = m => { const s=Number(m.droitMontant||0); return s>0?s:_droitRef; };
+  const _droitPaye = m => m.droitPaye===true||m.droitPaye==='true'||m.droitPaye==='1'||m.droitPaye===1;
+  const membresDroitAnnee = members.filter(m=>{
+    if(!_droitPaye(m)) return false;
+    if(!m.date) return false;
+    return String(new Date(m.date).getFullYear()) === annee;
+  });
+  const totalDroitsAdh = membresDroitAnnee.reduce((s,m)=>s+_getDroit(m),0);
 
-  // Solde global = calculé récursivement (inclut report N-1, N-2...)
-  const _sp = calculerSoldeAnnee(annee) - (totalCotisNorm + totalCotisExc + totalDroitsAdh + donsEspGlobal - totalDepGlobal - assistGlobal);
+  // Report exercice précédent (solde clôturé année N-1)
+  const reportPrecedent = (() => {
+    const annees = [..._anneesDisponibles].sort();
+    const idx = annees.indexOf(annee);
+    if(idx <= 0) return Number(branding.soldePrecedent)||0;
+    return Math.max(0, calculerSoldeAnnee(annees[idx-1]));
+  })();
+
+  // Solde annuel global
   const soldeGlobal = calculerSoldeAnnee(annee);
 
-  // Calculs période
+  // ── CALCULS PÉRIODE ──
   const cotisNormP = moisList.reduce((s,mn)=>
     s + actifs.reduce((a,m)=>{ const p=getMoisPaidList(m,annee); return a+(p.includes(mn)?m.quota:0); },0), 0);
+
   const cotisExcP = excDeAnnee.filter(exc=>moisList.includes(excMois(exc)))
-    .reduce((s,exc)=>s+Object.values(exc.paiements||{}).reduce((a,v)=>a+v,0),0);
+    .reduce((s,exc)=>s+Object.values(exc.paiements||{}).reduce((a,v)=>a+Number(v),0),0);
 
-  // Dons en espèces sur la période
-  const donsEspP = dons.filter(d=>
-    d.type==='especes' &&
-    moisList.includes(d.mois||'') &&
-    (d.annee||'2026')===annee
-  ).reduce((s,d)=>s+(Number(d.montant)||0),0);
+  // Dons espèces sur la période
+  const donsEspP = dons.filter(d=>{
+    if(d.type!=='especes') return false;
+    const a = d.annee || (d.date?String(new Date(d.date).getFullYear()):'');
+    if(a !== annee) return false;
+    const moisDon = d.mois || (d.date?ALL_MONTHS[new Date(d.date).getMonth()]:'');
+    return moisList.includes(moisDon);
+  }).reduce((s,d)=>s+(Number(d.montant)||0),0);
 
-  const totalDroitsAdhP = members.filter(m=>m.droitPaye).reduce((s,m)=>s+(m.droitMontant||0),0);
-  const nbDroitsPayes   = members.filter(m=>m.droitPaye).length;
+  // Droits d'adhésion sur la période
+  // Droits d'adhésion sur la période
+  const isAnnuel = moisList.length === 12 || moisList.length === ALL_MONTHS.length;
+  const membresDroitP = isAnnuel
+    ? membresDroitAnnee
+    : membresDroitAnnee.filter(m=>{
+        if(!m.date) return false;
+        const moisAdh = ALL_MONTHS[new Date(m.date).getMonth()];
+        return moisList.includes(moisAdh);
+      });
+  const totalDroitsAdhP = membresDroitP.reduce((s,m)=>s+_getDroit(m),0);
+  const nbDroitsPayes   = membresDroitP.length;
 
+  // Total recettes période
   const totalRecP = cotisNormP + cotisExcP + donsEspP + totalDroitsAdhP;
 
-  const depP   = depenses.filter(d=>moisList.includes(d.mois)&&(d.annee||'2026')===annee);
-  const totalD = depP.reduce((s,d)=>s+d.montant,0);
-  const dAct   = depP.filter(d=>d.type==='activite').reduce((s,d)=>s+d.montant,0);
-  const dFon   = depP.filter(d=>d.type==='fonctionnement').reduce((s,d)=>s+d.montant,0);
+  // Dépenses période
+  const depP = depenses.filter(d=>{
+    const a = d.annee || (d.date?String(new Date(d.date).getFullYear()):'');
+    if(a !== annee) return false;
+    const moisDep = d.mois || (d.date?ALL_MONTHS[new Date(d.date).getMonth()]:'');
+    return moisList.includes(moisDep);
+  });
+  const totalD = depP.reduce((s,d)=>s+Number(d.montant||0),0);
+  const dAct   = depP.filter(d=>d.type==='activite').reduce((s,d)=>s+Number(d.montant||0),0);
+  const dFon   = depP.filter(d=>d.type==='fonctionnement').reduce((s,d)=>s+Number(d.montant||0),0);
 
-  // Assistances sur la période
+  // Assistances période
   const assistP = assistances.filter(a=>{
-    const raw = a.dateVerse || a.dateEvent || '';
+    const raw = a.dateVerse || a.dateEvent || a.date || '';
     if(!raw) return false;
     const d = new Date(raw);
     if(isNaN(d)) return false;
@@ -12523,7 +13353,14 @@ function renderRapport(){
   // Solde période = Recettes - Dépenses - Assistances
   const soldePeriode = totalRecP - totalD - totalAssistP;
 
-  const nbAjour = actifs.filter(m=>moisList.every(mo=>getMoisPaidList(m,annee).includes(mo))).length;
+  // Membres à jour sur la période sélectionnée
+  const nbAjour = actifs.filter(m=>{
+    const paid = getMoisPaidList(m, annee);
+    // À jour = a payé au moins un mois de la période (pour mensuel)
+    // ou tous les mois de la période (pour annuel/trimestriel)
+    if(moisList.length === 1) return paid.includes(moisList[0]);
+    return moisList.every(mo=>paid.includes(mo));
+  }).length;
 
   // HTML par sections
   let html = '';
@@ -12548,7 +13385,7 @@ function renderRapport(){
     + '<div style="background:#EDE9FE;border-radius:8px;padding:12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#5B21B6">'+cotisExcP.toLocaleString('fr-FR')+' F</div><div style="font-size:11px;color:#5B21B6;margin-top:3px">⚡ Cotisations exceptionnelles</div></div>'
     + '<div style="background:#ECFDF5;border-radius:8px;padding:12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#065F46">'+donsEspP.toLocaleString('fr-FR')+' F</div><div style="font-size:11px;color:#065F46;margin-top:3px">🎁 Dons en espèces</div></div>'
     + (totalDroitsAdhP>0 ? '<div style="background:#FEF9C3;border-radius:8px;padding:12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#92400E">'+totalDroitsAdhP.toLocaleString('fr-FR')+' F</div><div style="font-size:11px;color:#92400E;margin-top:3px">💳 Droits d\'adhésion<br><span style="font-size:10px">('+nbDroitsPayes+' membre(s))</span></div></div>' : '')
-    + (_sp>0 ? '<div style="background:#EFF6FF;border-radius:8px;padding:12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#1E40AF">'+_sp.toLocaleString('fr-FR')+' F</div><div style="font-size:11px;color:#1E40AF;margin-top:3px">🏦 Report exercice précédent</div></div>' : '')
+    + (reportPrecedent>0 ? '<div style="background:#EFF6FF;border-radius:8px;padding:12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#1E40AF">'+reportPrecedent.toLocaleString('fr-FR')+' F</div><div style="font-size:11px;color:#1E40AF;margin-top:3px">🏦 Report exercice précédent</div></div>' : '')
     + '<div style="background:var(--green-light);border-radius:8px;padding:12px;text-align:center"><div style="font-size:16px;font-weight:700;color:var(--green)">'+totalRecP.toLocaleString('fr-FR')+' F</div><div style="font-size:11px;color:var(--green);margin-top:3px">Total recettes</div></div>'
     + '</div>';
 
@@ -12917,7 +13754,9 @@ let branding = {
 
     if(branding.nom || branding.color || branding.logoUrl){
       if(document.readyState === 'loading'){
-        document.addEventListener('DOMContentLoaded', applyBranding);
+        document.addEventListener('DOMContentLoaded', function(){
+          applyBranding();
+        });
       } else {
         applyBranding();
       }
@@ -13002,6 +13841,7 @@ function applyStartMonthConfig(){
   // Mettre à jour ANNEE_CONFIG pour l'année concernée
   ANNEE_CONFIG[String(annee)] = {debutIdx: debut};
   branding.debutMois = debut;
+  branding.debutMoisManual = true; // L'admin a explicitement défini ce mois
   branding.annee     = annee;
   const lbl = document.getElementById('brand-annee-label');
   if(lbl) lbl.textContent = annee;
@@ -13033,6 +13873,18 @@ function initBrandingPage(){
     document.getElementById('brand-solde-precedent').value = branding.soldePrecedent||0;
   if(document.getElementById('brand-regle-cotisation'))
     document.getElementById('brand-regle-cotisation').value = branding.regleCotisation||'mois_adhesion';
+  // telIndicatifDefaut : appliqué après initTelDropdown (les options sont peuplées à ce moment)
+  // On sauvegarde dans localStorage pour que initTelDropdown le retrouve
+  if(branding.telIndicatifDefaut){
+    lsSet('_tel_indicatif_defaut', branding.telIndicatifDefaut);
+    // Si le select est déjà peuplé (initTelDropdown déjà appelé), appliquer immédiatement
+    const brandSel = document.getElementById('brand-tel-indicatif');
+    if(brandSel && brandSel.options.length > 1){
+      brandSel.value = branding.telIndicatifDefaut;
+      onBrandIndicatifChange();
+      applyDefaultTelIndicatif();
+    }
+  }
   if(document.getElementById('brand-hsms-worker'))   document.getElementById('brand-hsms-worker').value   = branding.hsmsWorkerUrl||'';
   if(document.getElementById('brand-hsms-token'))    document.getElementById('brand-hsms-token').value    = branding.hsmsToken||'';
   if(document.getElementById('brand-hsms-email'))    document.getElementById('brand-hsms-email').value    = branding.hsmsEmail||'';
@@ -13213,6 +14065,10 @@ function saveBranding(){
   branding.hsmsClientSecret = document.getElementById('brand-hsms-secret')?.value.trim()||'';
   branding.debutMois= parseInt(document.getElementById('brand-mois-debut')?.value||'2');
   branding.regleCotisation = document.getElementById('brand-regle-cotisation')?.value || 'mois_adhesion';
+  const brandTelSel = document.getElementById('brand-tel-indicatif');
+  if(brandTelSel && brandTelSel.value && brandTelSel.value !== 'custom'){
+    branding.telIndicatifDefaut = brandTelSel.value; // format "code|flag"
+  }
   const newUrl = document.getElementById('brand-url').value.trim();
   if(newUrl) branding.url = newUrl;
 
@@ -13667,6 +14523,7 @@ function saveDon(){
   _cacheData();
 
   // ── Liaison Comptes & Trésorerie ──
+  if(!validateCompte('don-compte','destinataire ')) return;
   const donCpt = document.getElementById('don-compte')?.value;
   if(donCpt && idx===-1 && type==='especes' && montant>0){
     enregistrerTransaction({
@@ -14903,18 +15760,29 @@ function calculerSoldeAnnee(annee){
   }
 
   const actifs = members.filter(m=>m.actif);
+  const droitRef = Number(branding.droitAdhesion)||0;
 
   // Recettes de l'année
   const cotis    = actifs.reduce((s,m)=>s+getTotalPaid(m,yr),0);
   const cotisExc = excCotisations.filter(exc=>{
     if(!exc.dateCreation) return false;
     return String(new Date(exc.dateCreation).getFullYear())===yr;
-  }).reduce((s,exc)=>s+Object.values(exc.paiements||{}).reduce((a,v)=>a+v,0),0);
-  const droits   = yr===annees[0] ? members.filter(m=>m.droitPaye).reduce((s,m)=>s+(m.droitMontant||0),0) : 0;
-  const donsEsp  = dons.filter(d=>d.type==='especes'&&(d.annee||'2026')===yr).reduce((s,d)=>s+(Number(d.montant)||0),0);
-  const dep      = depenses.filter(d=>(d.annee||'2026')===yr).reduce((s,d)=>s+d.montant,0);
-  const assist   = assistances.filter(a=>{
-    const raw=a.dateVerse||a.dateEvent||'';
+  }).reduce((s,exc)=>s+Object.values(exc.paiements||{}).reduce((a,v)=>a+Number(v),0),0);
+  const droits = members.filter(m=>{
+    const dp = m.droitPaye===true||m.droitPaye==='true'||m.droitPaye==='1'||m.droitPaye===1;
+    return dp && m.date && String(new Date(m.date).getFullYear())===yr;
+  }).reduce((s,m)=>{ const d=Number(m.droitMontant||0); return s+(d>0?d:droitRef); },0);
+  const donsEsp = dons.filter(d=>{
+    if(d.type!=='especes') return false;
+    const a = d.annee||(d.date?d.date.substring(0,4):'');
+    return a===yr;
+  }).reduce((s,d)=>s+(Number(d.montant)||0),0);
+  const dep = depenses.filter(d=>{
+    const a = d.annee||(d.date?d.date.substring(0,4):'');
+    return a===yr;
+  }).reduce((s,d)=>s+Number(d.montant||0),0);
+  const assist = assistances.filter(a=>{
+    const raw=a.dateVerse||a.dateEvent||a.date||'';
     if(!raw) return false;
     const d=new Date(raw);
     return !isNaN(d) && String(d.getFullYear())===yr;
@@ -15445,7 +16313,8 @@ function showReadonlyBanner(){
         const b = JSON.parse(savedBranding);
         // Appliquer le mois de début depuis le branding sauvegardé
         if(b.debutMois !== undefined && b.annee){
-          ANNEE_CONFIG[String(b.annee)] = {debutIdx: parseInt(b.debutMois)};
+          const dv = b.debutMoisManual ? parseInt(b.debutMois) : 0;
+          ANNEE_CONFIG[String(b.annee)] = {debutIdx: dv};
         }
         // Fusionner les autres champs branding
         Object.assign(branding, b);
@@ -16242,6 +17111,37 @@ function showReadonlyBanner(){
       </div>
     </div>
   </div>
+
+<!-- ══ PANNEAU UPLOAD DOCUMENT FLOTTANT ══ -->
+<div id="doc-upload-float" style="display:none;position:fixed;bottom:24px;right:24px;z-index:9999;width:320px;background:#fff;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.18);border:1.5px solid #E5E7EB;overflow:hidden;font-family:var(--font-sans,Arial,sans-serif)">
+  <div style="background:linear-gradient(135deg,#0F2544,#1D4ED8);padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div id="doc-float-icon" style="font-size:20px">📤</div>
+      <div>
+        <div style="color:#fff;font-weight:700;font-size:13px" id="doc-float-title">Envoi du document</div>
+        <div style="color:rgba(255,255,255,0.7);font-size:11px" id="doc-float-filename">…</div>
+      </div>
+    </div>
+    <div style="color:#fff;font-weight:800;font-size:18px;font-family:monospace" id="doc-upload-pct">0%</div>
+  </div>
+  <div style="padding:12px 16px 10px">
+    <div id="doc-float-steps" style="margin-bottom:10px">
+      <div id="step-save"    style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:#9CA3AF"><span id="dot-save"    style="width:18px;height:18px;border-radius:50%;background:#E5E7EB;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;font-weight:700">1</span><span>Enregistrement dans Sheets</span></div>
+      <div id="step-upload"  style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:#9CA3AF"><span id="dot-upload"  style="width:18px;height:18px;border-radius:50%;background:#E5E7EB;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;font-weight:700">2</span><span>Envoi du fichier vers Google Drive</span></div>
+      <div id="step-confirm" style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:#9CA3AF"><span id="dot-confirm" style="width:18px;height:18px;border-radius:50%;background:#E5E7EB;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;font-weight:700">3</span><span>Confirmation du lien Drive</span></div>
+      <div id="step-done"    style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:#9CA3AF"><span id="dot-done"    style="width:18px;height:18px;border-radius:50%;background:#E5E7EB;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;font-weight:700">4</span><span>Document disponible</span></div>
+    </div>
+    <div style="height:8px;background:#F3F4F6;border-radius:4px;overflow:hidden;margin-bottom:6px">
+      <div id="doc-upload-bar" style="width:0%;height:100%;border-radius:4px;transition:width 0.5s ease;background:linear-gradient(90deg,#0F766E,#14B8A6)"></div>
+    </div>
+    <div id="doc-upload-status" style="font-size:11px;color:#6B7280;margin-bottom:6px">Démarrage…</div>
+    <div id="doc-drive-link-box" style="display:none;padding:8px 10px;background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;margin-top:4px">
+      <div style="font-size:11px;font-weight:600;color:#1D4ED8;margin-bottom:4px">✅ Disponible sur Google Drive</div>
+      <a id="doc-drive-link" href="#" target="_blank" rel="noopener" style="font-size:10px;color:#2563EB;word-break:break-all;font-family:monospace;display:block;margin-bottom:6px"></a>
+      <button onclick="document.getElementById('doc-upload-float').style.display='none'" style="width:100%;padding:6px;background:#1D4ED8;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Fermer</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
